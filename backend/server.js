@@ -6,9 +6,10 @@ const studentRoutes = require('./routes/student.routes');
 const labRoutes = require('./routes/lab.routes');
 const hodRoutes = require('./routes/hod.routes');
 const principalRoutes = require('./routes/principal.routes');
-const adminRoutes = require('./routes/admin.routes');
-const documentsRoutes = require('./routes/documents.routes');
+const adminRoutes        = require('./routes/admin.routes');
+const documentsRoutes    = require('./routes/documents.routes');
 const applicationsRoutes = require('./routes/applications.routes');
+const certificatesRoutes = require('./routes/certificates.js');
 
 const app = express();
 
@@ -23,8 +24,9 @@ app.use('/api/lab', labRoutes);
 app.use('/api/hod', hodRoutes);
 app.use('/api/principal', principalRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/documents', documentsRoutes);
+app.use('/api/documents',    documentsRoutes);
 app.use('/api/applications', applicationsRoutes);
+app.use('/api/certificates', certificatesRoutes);
 
 // Healthcheck Route
 app.get('/api/health', (req, res) => {

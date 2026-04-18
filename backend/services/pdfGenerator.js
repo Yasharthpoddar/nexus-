@@ -1,45 +1,300 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  NEXUS — PDF Certificate Generator
+ *
+ *  Generates fully styled No-Dues Certificates using pdf-lib.
+ *  Saves files locally to uploads/certificates/.
+ *  Works with both the document pipeline (per-doc certs) and the
+ *  full certificate package (all-clearances summary).
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const QRCode = require('qrcode');
-const path = require('path');
 const fs = require('fs');
-const storageService = require('./storageService');
-const supabase = require('../db/config');
+const path = require('path');
 const crypto = require('crypto');
+const supabase = require('../db/config');
 
-async function generateCertificate(applicationId, studentData, deptStatus) {
-  // Final Clearance Certificate logic
-  const year = new Date().getFullYear();
-  const serial = crypto.randomBytes(2).toString('hex').toUpperCase();
-  const certId = `NX-FINAL-${year}-${serial}`;
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-  const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([595.28, 841.89]);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  
-  page.drawText('NEXUS', { x: 50, y: 760, size: 36, font: fontBold });
-  page.drawText('FINAL APPLICATON CLEARANCE CERTIFICATE', { x: 50, y: 730, size: 14, font: fontReg });
-  
-  page.drawText(`Certificate ID: ${certId}`, { x: 50, y: 680, size: 12, font: fontBold });
-  page.drawText(`Name: ${studentData.name || 'Unknown'}`, { x: 50, y: 660, size: 12, font: fontReg });
-  page.drawText(`Roll No: ${studentData.roll_number || 'Unknown'}`, { x: 50, y: 640, size: 12, font: fontReg });
-  
-  let y = 600;
-  for (const dept of deptStatus || []) {
-    page.drawText(`${dept.department}: ${dept.status}`, { x: 50, y, size: 10, font: fontReg });
-    y -= 20;
-  }
+const hexToRgb = (hex) => {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  return rgb(r, g, b);
+};
 
-  const pdfBytes = await pdfDoc.save();
-  const Buffer = require('buffer').Buffer;
-  const remotePath = await storageService.uploadToStorage(
-    'nexus-certificates', 
-    `${certId}.pdf`, 
-    Buffer.from(pdfBytes), 
-    'application/pdf'
-  );
-
-  return { certificateId: certId, path: remotePath };
+function ensureCertDir() {
+  const certDir = path.join(process.cwd(), 'uploads', 'certificates');
+  fs.mkdirSync(certDir, { recursive: true });
+  return certDir;
 }
 
-module.exports = { generateCertificate };
+// ─── Generate unique certificate ID ─────────────────────────────────────────
+
+async function generateCertificateId(prefix = 'NX-DOC') {
+  const year = new Date().getFullYear();
+  const serial = crypto.randomBytes(2).toString('hex').toUpperCase();
+  return `${prefix}-${year}-${serial}`;
+}
+
+// ─── Generate QR code PNG buffer + save file ─────────────────────────────────
+
+async function generateQRCode(certificateId) {
+  const verifyUrl = `${process.env.CERT_PUBLIC_BASE_URL || 'http://localhost:5173'}/verify/${certificateId}`;
+  const qrBuffer = await QRCode.toBuffer(verifyUrl, { width: 120, margin: 1, color: { dark: '#121212', light: '#FFFFFF' } });
+
+  const certDir = ensureCertDir();
+  const qrPath = path.join(certDir, `qr-${certificateId}.png`);
+  fs.writeFileSync(qrPath, qrBuffer);
+
+  return { qrBuffer, qrPath };
+}
+
+// ─── Core PDF builder ────────────────────────────────────────────────────────
+
+async function generateNoDuesCertificate(studentData, certificateId, qrBuffer) {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595, 842]); // A4
+  const { width, height } = page.getSize();
+
+  const fontBold    = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontOblique = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+
+  const black     = hexToRgb('#121212');
+  const yellow    = hexToRgb('#F0C020');
+  const gray      = hexToRgb('#888888');
+  const lightGray = hexToRgb('#444444');
+  const white     = rgb(1, 1, 1);
+
+  // ── Top header bar ──────────────────────────────────────────────────────────
+  page.drawRectangle({ x: 0, y: height - 70, width, height: 70, color: black });
+  page.drawText('NEXUS', { x: width / 2 - 42, y: height - 38, size: 28, font: fontBold, color: white });
+  page.drawText('THE AUTOMATED CLEARANCE PROTOCOL', {
+    x: width / 2 - 110, y: height - 56, size: 8, font: fontRegular, color: rgb(0.7, 0.7, 0.7),
+  });
+  // Yellow accent stripe
+  page.drawRectangle({ x: 0, y: height - 73, width, height: 3, color: yellow });
+
+  // ── Certificate title ───────────────────────────────────────────────────────
+  page.drawText('DIGITAL NO-DUES CERTIFICATE', {
+    x: width / 2 - 130, y: height - 110, size: 20, font: fontBold, color: black,
+  });
+  page.drawText('Official Certificate of Full Departmental Clearance', {
+    x: width / 2 - 143, y: height - 130, size: 10, font: fontRegular, color: gray,
+  });
+
+  // Divider
+  page.drawLine({ start: { x: 40, y: height - 145 }, end: { x: width - 40, y: height - 145 }, thickness: 1.5, color: yellow });
+
+  // ── Student section ─────────────────────────────────────────────────────────
+  page.drawText('THIS IS TO CERTIFY THAT', {
+    x: width / 2 - 75, y: height - 175, size: 10, font: fontRegular, color: gray,
+  });
+
+  const name = (studentData.name || 'Student').toUpperCase();
+  const nameWidth = fontBold.widthOfTextAtSize(name, 26);
+  const nameX = width / 2 - nameWidth / 2;
+  page.drawText(name, { x: nameX, y: height - 210, size: 26, font: fontBold, color: black });
+  // Yellow underline
+  page.drawRectangle({ x: nameX, y: height - 215, width: nameWidth, height: 3, color: yellow });
+
+  // Student details
+  const detailY = [240, 258, 276];
+  const details = [
+    `Roll Number: ${studentData.rollNumber || studentData.roll_number || '—'}`,
+    `Programme: ${studentData.programme || 'B.Tech'}  |  Branch: ${studentData.branch || '—'}`,
+    `Batch: ${studentData.batch || '—'}`,
+  ];
+  details.forEach((text, i) => {
+    const tw = fontRegular.widthOfTextAtSize(text, 11);
+    page.drawText(text, { x: width / 2 - tw / 2, y: height - detailY[i], size: 11, font: fontRegular, color: lightGray });
+  });
+
+  // Body text
+  const bodyLines = [
+    'has successfully completed all departmental clearances and has no outstanding',
+    'dues with any department of the institution, and is hereby granted',
+    'this official No-Dues Certificate.',
+  ];
+  bodyLines.forEach((line, i) => {
+    const lw = (i < 2 ? fontRegular : fontOblique).widthOfTextAtSize(line, 11);
+    page.drawText(line, {
+      x: width / 2 - lw / 2, y: height - (310 + i * 18),
+      size: 11, font: i < 2 ? fontRegular : fontOblique, color: lightGray,
+    });
+  });
+
+  // ── Authority section ────────────────────────────────────────────────────────
+  page.drawLine({ start: { x: 40, y: height - 380 }, end: { x: width - 40, y: height - 380 }, thickness: 0.5, color: hexToRgb('#E0E0E0') });
+
+  const sectionLabel = 'CLEARANCE VERIFIED BY';
+  const slw = fontBold.widthOfTextAtSize(sectionLabel, 8);
+  page.drawText(sectionLabel, { x: width / 2 - slw / 2, y: height - 398, size: 8, font: fontBold, color: gray });
+
+  const authorities = [
+    { label: 'LAB IN-CHARGE',      name: studentData.labInchargeName  || 'Dr. Rajesh Mehta',   date: studentData.approvalDates?.lab       || '' },
+    { label: 'HEAD OF DEPARTMENT', name: studentData.hodName           || 'Prof. Anita Sharma',  date: studentData.approvalDates?.hod       || '' },
+    { label: 'PRINCIPAL',          name: studentData.principalName     || 'Dr. Vandana Rao',     date: studentData.approvalDates?.principal || '' },
+  ];
+
+  const colXs = [55, width / 2 - 65, width - 185];
+  authorities.forEach((auth, i) => {
+    page.drawText(auth.label, { x: colXs[i], y: height - 418, size: 7, font: fontBold, color: gray });
+    page.drawText(auth.name,  { x: colXs[i], y: height - 432, size: 9, font: fontBold, color: black });
+    if (auth.date) {
+      page.drawText(auth.date, { x: colXs[i], y: height - 446, size: 7, font: fontRegular, color: gray });
+    }
+    // Signature line
+    page.drawLine({
+      start: { x: colXs[i], y: height - 450 },
+      end:   { x: colXs[i] + 130, y: height - 450 },
+      thickness: 0.5, color: hexToRgb('#CCCCCC'),
+    });
+  });
+
+  // ── Certificate metadata ─────────────────────────────────────────────────────
+  page.drawLine({ start: { x: 40, y: height - 468 }, end: { x: width - 40, y: height - 468 }, thickness: 0.5, color: hexToRgb('#E0E0E0') });
+
+  const issueDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+  page.drawText(`Certificate No: ${certificateId}`, { x: 40, y: height - 495, size: 10, font: fontBold, color: black });
+  page.drawText(`Issue Date: ${issueDate}`,          { x: 40, y: height - 513, size: 9,  font: fontRegular, color: gray });
+  page.drawText('This certificate is digitally generated and tamper-evident.', {
+    x: 40, y: height - 529, size: 8, font: fontRegular, color: hexToRgb('#AAAAAA'),
+  });
+
+  // ── QR code ──────────────────────────────────────────────────────────────────
+  if (qrBuffer) {
+    const qrImage = await pdfDoc.embedPng(qrBuffer);
+    page.drawImage(qrImage, { x: width - 125, y: height - 520, width: 80, height: 80 });
+    page.drawText('Scan to verify', { x: width - 115, y: height - 528, size: 7, font: fontRegular, color: gray });
+  }
+
+  // ── Footer ───────────────────────────────────────────────────────────────────
+  page.drawRectangle({ x: 0, y: 0, width, height: 50, color: black });
+  page.drawRectangle({ x: 0, y: 50, width, height: 3, color: yellow });
+  const verifyUrl = `${process.env.CERT_PUBLIC_BASE_URL || 'http://localhost:5173'}/verify/${certificateId}`;
+  const urlWidth = fontRegular.widthOfTextAtSize(`Verify at: ${verifyUrl}`, 8);
+  page.drawText(`Verify at: ${verifyUrl}`, {
+    x: width / 2 - urlWidth / 2, y: 18, size: 8, font: fontRegular, color: rgb(0.8, 0.8, 0.8),
+  });
+
+  // ── Save to disk ─────────────────────────────────────────────────────────────
+  const pdfBytes = await pdfDoc.save();
+  const certDir  = ensureCertDir();
+  const certPath = path.join(certDir, `${certificateId}.pdf`);
+  fs.writeFileSync(certPath, pdfBytes);
+
+  return { pdfBytes, certPath };
+}
+
+// ─── Full package: generate cert for a document after pipeline approval ──────
+// Called by documentPipeline.js when a document reaches 'completed' stage
+
+async function generateDocumentCertificate(documentId, studentData) {
+  const certId = await generateCertificateId('NX-DOC');
+  const { qrBuffer, qrPath } = await generateQRCode(certId);
+  const { certPath } = await generateNoDuesCertificate(studentData, certId, qrBuffer);
+
+  // Store certificate record in Supabase
+  const { data, error } = await supabase
+    .from('certificates')
+    .insert({
+      user_id:     studentData.userId,
+      certificate_id: certId,
+      file_path:   `uploads/certificates/${certId}.pdf`,
+      issued_at:   new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) console.error('[pdfGenerator] Certificate DB insert error:', error.message);
+
+  // Update the document row with certificate_id
+  await supabase
+    .from('documents')
+    .update({ certificate_id: data?.id || null })
+    .eq('id', documentId);
+
+  return { certificateId: certId, certPath, qrPath, dbRecord: data };
+}
+
+// ─── Regenerate a certificate by student userId (for admin/repair use) ────────
+
+async function regenerateCertificateForUser(userId) {
+  // Fetch student
+  const { data: user, error: userErr } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (userErr || !user) throw new Error(`User not found: ${userId}`);
+
+  // Check for existing cert record
+  const { data: existingCerts } = await supabase
+    .from('certificates')
+    .select('*')
+    .eq('user_id', userId)
+    .order('issued_at', { ascending: false })
+    .limit(1);
+
+  const certId = (existingCerts && existingCerts.length > 0)
+    ? existingCerts[0].certificate_id
+    : await generateCertificateId('NX-CERT');
+
+  const studentData = {
+    name:         user.name,
+    rollNumber:   user.roll_number || '—',
+    programme:    user.programme   || 'B.Tech',
+    branch:       user.branch      || '—',
+    batch:        user.batch       || '—',
+    userId:       user.id,
+    principalName:    'Dr. Vandana Rao',
+    hodName:          'Prof. Anita Sharma',
+    labInchargeName:  'Dr. Rajesh Mehta',
+    approvalDates: {
+      lab:       new Date().toLocaleDateString('en-IN'),
+      hod:       new Date().toLocaleDateString('en-IN'),
+      principal: new Date().toLocaleDateString('en-IN'),
+    },
+  };
+
+  const { qrBuffer, qrPath } = await generateQRCode(certId);
+  const { certPath } = await generateNoDuesCertificate(studentData, certId, qrBuffer);
+  const relPath = `uploads/certificates/${certId}.pdf`;
+
+  // Upsert in DB
+  if (existingCerts && existingCerts.length > 0) {
+    await supabase
+      .from('certificates')
+      .update({ file_path: relPath, issued_at: new Date().toISOString() })
+      .eq('certificate_id', certId);
+  } else {
+    await supabase
+      .from('certificates')
+      .insert({ user_id: userId, certificate_id: certId, file_path: relPath, issued_at: new Date().toISOString() });
+  }
+
+  return { certificateId: certId, certPath, qrPath };
+}
+
+// ─── Legacy wrapper (used by old applications pipeline) ──────────────────────
+
+async function generateCertificate(applicationId, studentData, deptStatus) {
+  const certId = await generateCertificateId('NX-APP');
+  const { qrBuffer } = await generateQRCode(certId);
+  const { certPath } = await generateNoDuesCertificate(studentData, certId, qrBuffer);
+  return { certificateId: certId, path: certPath };
+}
+
+module.exports = {
+  generateCertificate,
+  generateNoDuesCertificate,
+  generateDocumentCertificate,
+  regenerateCertificateForUser,
+  generateQRCode,
+  generateCertificateId,
+};
