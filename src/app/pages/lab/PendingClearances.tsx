@@ -3,6 +3,7 @@ import { useLab } from '../../context/LabContext';
 import { format } from 'date-fns';
 import { Search, Filter, ArrowUpDown, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { DocumentQueue } from '../../components/DocumentQueue';
 
 export function PendingClearances() {
   const { labStudents, approveStudent, flagStudent } = useLab();
@@ -54,13 +55,23 @@ export function PendingClearances() {
     <div className="p-6 md:p-10 max-w-[1600px] mx-auto space-y-8 pb-32">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b-4 border-[#121212] pb-6">
         <div>
-          <h1 className="font-black text-3xl md:text-5xl uppercase tracking-tighter mb-2">Pending Applications</h1>
+          <h1 className="font-black text-3xl md:text-5xl uppercase tracking-tighter mb-2">Pending Queue</h1>
           <p className="font-bold opacity-50 uppercase tracking-widest text-sm">
              Evaluate and verify Lab conditions prior to forwarding to Stage 2.
           </p>
         </div>
-        <div className="bg-[#121212] text-white font-black text-lg px-4 py-2 border-4 border-[#121212] shadow-[4px_4px_0px_0px_#F0C020]">
-          {pendingList.length} IN QUEUE
+      </div>
+
+      {/* ── Document Verification Queue ──────────────────────────────────── */}
+      <DocumentQueue stage="lab" portalPrefix="/lab" title="Document Verification Queue" />
+
+      {/* ── Application Clearance Queue ─────────────────────────────────── */}
+      <div className="mt-8 pt-8 border-t-4 border-[#121212]">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="font-black text-xl uppercase tracking-tight">Application Clearance Queue</h2>
+          <div className="bg-[#121212] text-white font-black text-sm px-4 py-2 border-2 border-[#121212]">
+            {pendingList.length} APPLICATIONS
+          </div>
         </div>
       </div>
 
@@ -102,13 +113,23 @@ export function PendingClearances() {
       </div>
 
       {selectedIds.length > 0 && (
-        <div className="bg-[#F0C020] border-4 border-[#121212] p-4 flex items-center justify-between sticky top-[80px] z-20 shadow-[8px_8px_0px_#121212]">
+      <div className="bg-[#F0C020] border-4 border-[#121212] p-4 flex items-center justify-between sticky top-[80px] z-20 shadow-[8px_8px_0px_#121212]">
           <span className="font-black text-sm uppercase tracking-widest">{selectedIds.length} Applicants Selected</span>
           <div className="flex gap-4">
-             <button className="px-4 py-2 border-2 border-[#121212] bg-[#121212] text-white font-black uppercase tracking-widest text-xs hover:bg-[#1040C0]">
+             <button
+               onClick={async () => {
+                 await Promise.all(selectedIds.map(id => approveStudent(id, 'Batch approved by Lab In-charge')));
+                 setSelectedIds([]);
+               }}
+               className="px-4 py-2 border-2 border-[#121212] bg-[#121212] text-white font-black uppercase tracking-widest text-xs hover:bg-[#1040C0]">
                Batch Approve
              </button>
-             <button className="px-4 py-2 border-2 border-[#121212] bg-white font-black uppercase tracking-widest text-xs hover:bg-white/80">
+             <button
+               onClick={async () => {
+                 await Promise.all(selectedIds.map(id => flagStudent(id, 'Batch flagged by Lab In-charge', '')));
+                 setSelectedIds([]);
+               }}
+               className="px-4 py-2 border-2 border-[#121212] bg-white font-black uppercase tracking-widest text-xs hover:bg-white/80">
                Batch Flag
              </button>
           </div>

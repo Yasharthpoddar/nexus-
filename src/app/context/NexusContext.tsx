@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import axios from 'axios';
+import { useAuth } from './AuthContext';
 
 export type UserProfile = {
   name: string;
@@ -57,127 +59,207 @@ export type Document = {
 
 type NexusContextType = {
   profile: UserProfile;
+  application: any;
   departments: Department[];
   notifications: Notification[];
   documents: Document[];
   dues: Due[];
   payments: Payment[];
-  markNotificationRead: (id: string) => void;
-  markAllNotificationsRead: () => void;
-  payDue: (id: string) => void;
-  uploadDocument: (doc: Document) => void;
-  deleteDocument: (id: string) => void;
+  loading: boolean;
+  markNotificationRead: (id: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
+  payDue: (id: string) => Promise<void>;
+  uploadDocument: (doc: Document) => Promise<void>;
+  deleteDocument: (id: string) => Promise<void>;
+  refresh: () => Promise<void>;
 };
-
-const initialProfile: UserProfile = {
-  name: 'Hritani Joshi',
-  rollNo: '21CS088',
-  batch: '2021–2025',
-  branch: 'Computer Science',
-  avatar: 'HJ'
-};
-
-const initialDepartments: Department[] = [
-  { id: 'lib', name: 'Library', authority: 'Mr. Desai — Librarian', status: 'Action Required', note: 'Book return pending, fine of ₹340' },
-  { id: 'lab', name: 'Laboratory', authority: 'Dr. Mehta', status: 'Cleared', note: 'Approved by Dr. Mehta on Jun 10' },
-  { id: 'acc', name: 'Accounts', authority: 'Mr. Sharma', status: 'Pending', note: 'Awaiting accounts officer review' },
-  { id: 'hod', name: 'HOD', authority: 'Prof. Sharma', status: 'Cleared', note: 'Approved by Prof. Sharma on Jun 12' },
-  { id: 'prin', name: 'Principal', authority: 'Dr. Rao', status: 'Pending', note: 'Waiting for HOD chain to complete' },
-  { id: 'spo', name: 'Sports', authority: 'Mr. Singh', status: 'Cleared', note: 'No dues' },
-  { id: 'hos', name: 'Hostel', authority: 'Mrs. Verma', status: 'Action Required', note: 'Repair charge of ₹500 unpaid' },
-];
-
-const initialNotifications: Notification[] = [
-  { id: '1', type: 'approval', title: 'HOD Approved', description: 'Your application has been approved by the HOD.', time: '2 hours ago', read: false },
-  { id: '2', type: 'rejection', title: 'Action Required: Library', description: 'Library has flagged a pending book return.', time: '1 day ago', read: false },
-  { id: '3', type: 'payment', title: 'Payment Received', description: 'Payment of ₹340 for library fine was successful.', time: '2 days ago', read: true },
-  { id: '4', type: 'system', title: 'Document Uploaded', description: 'You successfully uploaded the Lab Manual receipt.', time: '3 days ago', read: true },
-  { id: '5', type: 'system', title: 'Application Submitted', description: 'Your graduation clearance application workflow has started.', time: '5 days ago', read: true },
-];
-
-const initialDues: Due[] = [
-  { id: 'due_1', department: 'Library', reason: 'Overdue textbook', amount: 340, dueDate: 'Jun 1, 2026' },
-  { id: 'due_2', department: 'Hostel', reason: 'Repair charge', amount: 500, dueDate: 'Jun 20, 2026' },
-];
-
-const initialDocuments: Document[] = [
-  { id: 'img1', name: 'Lab_Manual_Receipt.pdf', type: 'Lab Manual', size: '1.2 MB', date: 'Jun 15, 2026', status: 'Verified' },
-  { id: 'img2', name: 'ID_Card_Scan.jpg', type: 'ID Card', size: '450 KB', date: 'Jun 10, 2026', status: 'Under Review' },
-  { id: 'img3', name: 'Library_Clearance.pdf', type: 'Library Receipt', size: '200 KB', date: 'Jun 12, 2026', status: 'Rejected', rejectionReason: 'Illegible scan, please re-upload a clear copy.' },
-];
-
-const initialPayments: Payment[] = [
-  { id: 'pay1', department: 'Library', amount: 340, date: 'Jun 16, 2026 10:45 AM', receiptNo: 'RCPT-9921', status: 'Completed', type: 'fine' },
-];
 
 const NexusContext = createContext<NexusContextType | undefined>(undefined);
 
 export function NexusProvider({ children }: { children: ReactNode }) {
-  const [profile] = useState<UserProfile>(initialProfile);
-  const [departments, setDepartments] = useState<Department[]>(initialDepartments);
-  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
-  const [dues, setDues] = useState<Due[]>(initialDues);
-  const [payments, setPayments] = useState<Payment[]>(initialPayments);
-  const [documents, setDocuments] = useState<Document[]>(initialDocuments);
+  const { currentUser } = useAuth();
+  
+  const [profile, setProfile] = useState<UserProfile>({
+    name: 'Student', rollNo: 'N/A', batch: '2021–2025', branch: 'Computer Science', avatar: 'S'
+  });
+  const [application, setApplication] = useState<any>(null);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [dues, setDues] = useState<Due[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const markNotificationRead = (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const fetchSyncData = async () => {
+    if (!currentUser || currentUser.role !== 'student') {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('nexus_token');
+      const { data } = await axios.get('/api/student/sync', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const resData = data.data;
+
+      // Map raw backend schema to frontend structural interface
+      setProfile({
+        name: currentUser.name,
+        rollNo: currentUser.roll_number || 'N/A',
+        batch: currentUser.batch || '2021-2025',
+        branch: currentUser.programme || 'Unknown',
+        avatar: currentUser.name.substring(0, 2).toUpperCase()
+      });
+
+      setApplication(resData.application);
+
+      const mapDeptId = (name: string) => {
+        if (name.includes('Libra')) return 'lib';
+        if (name.includes('Lab')) return 'lab';
+        if (name.includes('Acc')) return 'acc';
+        if (name.includes('HOD')) return 'hod';
+        if (name.includes('Prin')) return 'prin';
+        if (name.includes('Sport')) return 'spo';
+        if (name.includes('Hostel')) return 'hos';
+        return name;
+      };
+
+      setDepartments(
+        resData.departments.map((d: any) => ({
+          id: mapDeptId(d.department),
+          name: d.department,
+          authority: d.authority,
+          status: d.status,
+          note: d.flag_reason || ''
+        }))
+      );
+
+      setDocuments(
+        resData.documents.map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          type: d.doc_type,
+          size: '1.2 MB', // Mocking size
+          date: new Date(d.date).toLocaleDateString(),
+          status: d.status
+        }))
+      );
+
+      setNotifications(
+        resData.notifications.map((n: any) => {
+          // Notifications can be either legacy JSON blobs or new plain-text pipeline messages.
+          // Always try JSON first, fall back to treating the message as a plain string.
+          let payload: { type?: string; title?: string; description?: string } = {};
+          try {
+            const parsed = JSON.parse(n.message);
+            // Confirm it's actually a notification object, not a random string
+            if (typeof parsed === 'object' && parsed !== null) {
+              payload = parsed;
+            } else {
+              payload = { type: 'system', title: 'Notification', description: String(parsed) };
+            }
+          } catch {
+            // Plain string message — use it as the description directly
+            payload = { type: 'system', title: 'Notification', description: n.message || '' };
+          }
+          return {
+            id: n.id,
+            type: payload.type || 'system',
+            title: payload.title || 'Notification',
+            description: payload.description || n.message || '',
+            time: new Date(n.created_at).toLocaleDateString(),
+            read: n.is_read
+          };
+        })
+      );
+
+      setDues(
+        resData.dues.filter((d: any) => !d.is_paid).map((d: any) => ({
+          id: d.id,
+          department: d.department,
+          reason: d.reason,
+          amount: d.amount,
+          dueDate: new Date().toLocaleDateString()
+        }))
+      );
+
+      setPayments(
+        resData.payments.map((p: any) => ({
+          id: p.id,
+          department: p.department,
+          amount: p.amount,
+          date: new Date(p.paid_at).toLocaleString(),
+          receiptNo: p.receipt_no,
+          status: p.status,
+          type: p.department.toLowerCase().includes('library') ? 'fine' : 'repair'
+        }))
+      );
+
+    } catch (err) {
+      console.error('Failed to sync student data', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSyncData();
+  }, [currentUser]);
+
+  const refresh = async () => {
+    setLoading(true);
+    await fetchSyncData();
+  };
+
+  const markNotificationRead = async (id: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/student/notifications/read', { notifId: id }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
   
-  const markAllNotificationsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const markAllNotificationsRead = async () => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/student/notifications/read-all', {}, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const payDue = (id: string) => {
-    const due = dues.find(d => d.id === id);
-    if (!due) return;
-    
-    // remove from dues
-    setDues(prev => prev.filter(d => d.id !== id));
-    
-    // add to payments
-    const newPayment: Payment = {
-      id: `pay_${Date.now()}`,
-      department: due.department,
-      amount: due.amount,
-      date: new Date().toLocaleString(),
-      receiptNo: `RCPT-${Math.floor(1000 + Math.random() * 9000)}`,
-      status: 'Completed',
-      type: due.department.toLowerCase().includes('library') ? 'fine' : 'repair',
-    };
-    setPayments(prev => [newPayment, ...prev]);
-
-    // update department status appropriately
-    setDepartments(prev => prev.map(dep => {
-      if (dep.name === due.department) {
-        return { ...dep, status: 'Pending', note: 'Payment received. Awaiting admin clearance.' };
-      }
-      return dep;
-    }));
+  const payDue = async (id: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/student/pay', { dueId: id }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const uploadDocument = (doc: Document) => {
-    setDocuments(prev => [doc, ...prev]);
+  const uploadDocument = async (doc: Document) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/student/document', { name: doc.name, doc_type: doc.type, size: doc.size }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const deleteDocument = (id: string) => {
-    setDocuments(prev => prev.filter(d => d.id !== id));
+  const deleteDocument = async (id: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.delete(`/api/student/document/${id}`, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
   return (
     <NexusContext.Provider
       value={{
         profile,
+        application,
         departments,
         notifications,
+        documents,
         dues,
         payments,
-        documents,
+        loading,
         markNotificationRead,
         markAllNotificationsRead,
         payDue,
         uploadDocument,
         deleteDocument,
+        refresh
       }}
     >
       {children}

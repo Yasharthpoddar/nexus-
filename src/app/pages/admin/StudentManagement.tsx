@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
-import { useAuth } from '../../context/AuthContext';
 import { Link } from 'react-router';
 import { 
-  Search, Filter, ShieldOff, Download, UserX, X, Plus, ShieldCheck
+  Search, ShieldOff, Download, UserX, X, Plus, ShieldCheck, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export function StudentManagement() {
   const { students, toggleStudentBlock, addStudent } = useAdmin();
-  const { addUser } = useAuth();
   
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
@@ -20,10 +18,12 @@ export function StudentManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [showToast, setShowToast] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   // New Student Form State
   const [formData, setFormData] = useState({
-    name: '', enum: '', branch: 'CSE', year: '2025', phone: '',
+    name: '', rollNo: '', branch: 'CSE', batch: '2025', phone: '',
     email: '', pass: ''
   });
 
@@ -33,28 +33,26 @@ export function StudentManagement() {
     setTimeout(() => setShowToast(false), 3000);
   };
 
-  const handleCreateStudent = (e: React.FormEvent) => {
+  const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if(formData.name && formData.email && formData.pass) {
-      
-      const newAuthData = {
-        id: `s_${Date.now()}`,
+    setFormError('');
+    setSubmitting(true);
+    try {
+      await addStudent({
+        name: formData.name,
         email: formData.email,
         password: formData.pass,
-        role: 'student' as any,
-        name: formData.name,
-        redirectTo: '/dashboard'
-      };
-
-      // 1. Give them system-level login access
-      addUser(newAuthData);
-
-      // 2. Insert them into the Admin's frontend display table
-      addStudent(formData);
-
+        rollNo: formData.rollNo,
+        branch: formData.branch,
+        batch: formData.batch,
+      });
       setModalOpen(false);
-      setFormData({ name: '', enum: '', branch: 'CSE', year: '2025', phone: '', email: '', pass: '' });
-      triggerToast('Student account created. Credentials sent to registered email.');
+      setFormData({ name: '', rollNo: '', branch: 'CSE', batch: '2025', phone: '', email: '', pass: '' });
+      triggerToast('Student account created and live in database.');
+    } catch (err: any) {
+      setFormError(err?.response?.data?.message || 'Registration failed. Email may already exist.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -242,47 +240,49 @@ export function StudentManagement() {
                  </div>
                  <form onSubmit={handleCreateStudent} className="p-6 md:p-8 flex flex-col gap-6 overflow-y-auto">
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Full Name</label>
-                        <input required type="text" className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-sm focus:bg-white" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Enrollment No</label>
-                        <input required type="text" className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-sm focus:bg-white uppercase" value={formData.enum} onChange={e=>setFormData({...formData, enum: e.target.value})} />
-                      </div>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                       <div>
+                         <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Full Name</label>
+                         <input required type="text" className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-sm focus:bg-white" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} />
+                       </div>
+                       <div>
+                         <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Roll / Enrollment No</label>
+                         <input type="text" className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-sm focus:bg-white uppercase" value={formData.rollNo} onChange={e=>setFormData({...formData, rollNo: e.target.value})} />
+                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Branch</label>
-                        <select className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-xs uppercase tracking-widest" value={formData.branch} onChange={e=>setFormData({...formData, branch: e.target.value})}>
-                          <option>CSE</option><option>IT</option><option>ECE</option><option>Mechanical</option><option>Civil</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Pass Year</label>
-                        <select className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-xs uppercase tracking-widest" value={formData.year} onChange={e=>setFormData({...formData, year: e.target.value})}>
-                          <option>2024</option><option>2025</option><option>2026</option><option>2027</option>
-                        </select>
-                      </div>
+                       <div>
+                         <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Branch</label>
+                         <select className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-xs uppercase tracking-widest" value={formData.branch} onChange={e=>setFormData({...formData, branch: e.target.value})}>
+                           <option>CSE</option><option>IT</option><option>ECE</option><option>Mechanical</option><option>Civil</option>
+                         </select>
+                       </div>
+                       <div>
+                         <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Pass Year (Batch)</label>
+                         <select className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-xs uppercase tracking-widest" value={formData.batch} onChange={e=>setFormData({...formData, batch: e.target.value})}>
+                           <option>2024</option><option>2025</option><option>2026</option><option>2027</option>
+                         </select>
+                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Mobile Number</label>
-                        <input required type="tel" className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-sm focus:bg-white" value={formData.phone} onChange={e=>setFormData({...formData, phone: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">College Email</label>
-                        <input required type="email" placeholder="@college.edu" className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-sm focus:bg-white" value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} />
-                      </div>
-                    </div>
+                       <div>
+                         <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">College Email</label>
+                         <input required type="email" placeholder="student@college.edu" className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-bold text-sm focus:bg-white" value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} />
+                       </div>
+                       <div>
+                         <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Temporary Password</label>
+                         <input required minLength={6} type="text" className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-mono text-sm focus:bg-white" value={formData.pass} onChange={e=>setFormData({...formData, pass: e.target.value})} />
+                       </div>
+                     </div>
 
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Temporary Password</label>
-                      <input required minLength={8} type="text" className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-mono text-sm focus:bg-white" value={formData.pass} onChange={e=>setFormData({...formData, pass: e.target.value})} />
-                    </div>
+                     {formError && (
+                       <div className="flex items-center gap-3 bg-[#D02020]/10 border-2 border-[#D02020] p-3">
+                         <AlertCircle className="w-4 h-4 text-[#D02020] shrink-0" />
+                         <p className="font-bold text-xs text-[#D02020] uppercase tracking-wide">{formError}</p>
+                       </div>
+                     )}
 
-                    <button type="submit" className="w-full mt-4 bg-[#121212] text-white py-4 font-black uppercase tracking-widest hover:bg-[#F0C020] hover:text-[#121212] transition-colors border-4 border-transparent hover:border-[#121212]">
-                      Create Student Account
-                    </button>
+                     <button type="submit" disabled={submitting} className="w-full mt-4 bg-[#121212] text-white py-4 font-black uppercase tracking-widest hover:bg-[#F0C020] hover:text-[#121212] transition-colors border-4 border-transparent hover:border-[#121212] disabled:opacity-50 disabled:cursor-not-allowed">
+                       {submitting ? 'Creating...' : 'Create Student Account'}
+                     </button>
                  </form>
               </motion.div>
            </div>

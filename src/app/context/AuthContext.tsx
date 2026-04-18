@@ -1,54 +1,78 @@
-import React, { createContext, useContext, useState } from 'react';
-import { MockUser, MOCK_USERS } from './mockUsers';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'student' | 'admin' | 'hod' | 'principal' | 'lab-incharge';
+  sub_role?: string;
+  roll_number?: string;
+  batch?: string;
+  branch?: string;
+  programme?: string;
+  phone?: string;
+}
 
 interface AuthContextType {
-  currentUser: MockUser | null;
-  users: MockUser[];
-  login: (email: string, password: string) => { success: boolean; error?: string; user?: MockUser };
+  currentUser: User | null;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>;
   logout: () => void;
-  addUser: (user: MockUser) => void;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<MockUser | null>(null);
-  const [users, setUsers] = useState<MockUser[]>(() => {
-    const saved = localStorage.getItem('nexus_mock_users');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return MOCK_USERS;
-      }
-    }
-    return MOCK_USERS;
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const login = (email: string, password: string) => {
-    const user = users.find(u => u.email === email && u.password === password);
-    if (user) {
+  // Restore session on app load
+  useEffect(() => {
+    const restoreSession = async () => {
+      const token = localStorage.getItem('nexus_token');
+      if (token) {
+        try {
+          const response = await axios.get('/api/auth/me', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setCurrentUser(response.data.user);
+        } catch (error) {
+          // Token invalid or expired
+          localStorage.removeItem('nexus_token');
+        }
+      }
+      setIsLoading(false);
+    };
+    
+    restoreSession();
+  }, []);
+
+  const login = async (email: string, password: string) => {
+    try {
+      const response = await axios.post('/api/auth/login', { email, password });
+      const { token, user } = response.data;
+      
+      localStorage.setItem('nexus_token', token);
       setCurrentUser(user);
+      
       return { success: true, user };
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: error.response?.data?.message || 'Invalid email or password. Please check your credentials.' 
+      };
     }
-    return { success: false, error: 'Invalid email or password. Please check your credentials.' };
   };
 
   const logout = () => {
+    localStorage.removeItem('nexus_token');
     setCurrentUser(null);
   };
 
-  const addUser = (user: MockUser) => {
-    setUsers(prev => {
-      const newUsers = [...prev, user];
-      localStorage.setItem('nexus_mock_users', JSON.stringify(newUsers));
-      return newUsers;
-    });
-  };
-
   return (
-    <AuthContext.Provider value={{ currentUser, users, login, logout, addUser }}>
-      {children}
+    <AuthContext.Provider value={{ currentUser, login, logout, isLoading }}>
+      {!isLoading && children}
     </AuthContext.Provider>
   );
 }

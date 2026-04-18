@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { subDays, subHours } from 'date-fns';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import axios from 'axios';
+import { useAuth } from './AuthContext';
 
 export interface EquipmentStatus {
   labManual: 'Returned' | 'Pending';
@@ -16,7 +17,7 @@ export interface LabStudent {
   batch: string;
   email: string;
   submittedAt: string;
-  status: 'Pending' | 'Approved' | 'Flagged';
+  status: 'Pending' | 'Cleared' | 'Action Required' | 'Approved' | 'Flagged';
   decisionDate?: string;
   decisionComment?: string;
   documents: { name: string; type: string; verified: boolean }[];
@@ -34,120 +35,113 @@ interface LabContextType {
   profile: any;
   labStudents: LabStudent[];
   activities: ActivityEvent[];
-  approveStudent: (id: string, notes: string) => void;
-  flagStudent: (id: string, comment: string, notes: string) => void;
-  toggleEquipmentStatus: (id: string, key: keyof EquipmentStatus) => void;
-  executeBulkReturn: (ids: string[]) => void;
-  undoDecision: (id: string) => void;
+  loading: boolean;
+  approveStudent: (id: string, notes: string) => Promise<void>;
+  flagStudent: (id: string, comment: string, notes: string) => Promise<void>;
+  toggleEquipmentStatus: (id: string, key: keyof EquipmentStatus) => Promise<void>;
+  executeBulkReturn: (ids: string[]) => Promise<void>;
+  undoDecision: (id: string) => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 const LabContext = createContext<LabContextType | undefined>(undefined);
 
 export const LabProvider = ({ children }: { children: ReactNode }) => {
-  const profile = {
-    name: 'Dr. Rajesh Mehta',
-    email: 'lab.mehta@college.edu',
-    role: 'Lab In-charge',
-    department: 'Computer Science',
-    initials: 'DM'
+  const { currentUser } = useAuth();
+  
+  const [profile, setProfile] = useState<any>({
+    name: 'Lab Admin', role: 'Lab In-charge', department: 'Computer Science', initials: 'L'
+  });
+  
+  const [labStudents, setLabStudents] = useState<LabStudent[]>([]);
+  const [activities, setActivities] = useState<ActivityEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSyncData = async () => {
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
+    const isLabUser = currentUser.sub_role === 'lab-incharge' || currentUser.role === 'lab-incharge';
+    if (!isLabUser) {
+      setLoading(false);
+      return;
+    }
+
+
+    try {
+      const token = localStorage.getItem('nexus_token');
+      const { data } = await axios.get('/api/lab/sync', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const resData = data.data;
+
+      setProfile({
+        name: currentUser.name,
+        email: currentUser.email,
+        role: 'Lab In-charge',
+        department: 'Computer Science',
+        initials: currentUser.name.substring(0, 2).toUpperCase()
+      });
+
+      setLabStudents(
+        resData.labStudents.map((s: any) => ({
+          ...s,
+          // Convert database 'Cleared' back to 'Approved' to match the legacy dashboard visual engine without breaking the UI states
+          status: s.status === 'Cleared' ? 'Approved' : s.status === 'Action Required' ? 'Flagged' : s.status
+        }))
+      );
+      setActivities(resData.activities);
+    } catch (err) {
+      console.error('Failed to sync lab data', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const [labStudents, setLabStudents] = useState<LabStudent[]>([
-    {
-      id: 'APP-101', rollNo: '21CS088', name: 'Hritani Joshi', branch: 'Computer Science', batch: '2025', email: '21cs088@college.edu',
-      submittedAt: subDays(new Date(), 3).toISOString(), status: 'Pending',
-      documents: [{ name: 'Clearance_Form.pdf', type: 'PDF', verified: false }],
-      equipment: { labManual: 'Pending', equipmentKit: 'Returned', safetyDeposit: 'Returned', labCard: 'Returned' }
-    },
-    {
-      id: 'APP-102', rollNo: '21CS042', name: 'Rohan Patil', branch: 'Computer Science', batch: '2025', email: '21cs042@college.edu',
-      submittedAt: subDays(new Date(), 1).toISOString(), status: 'Pending',
-      documents: [{ name: 'Lab_Dues_Receipt.pdf', type: 'Receipt', verified: false }],
-      equipment: { labManual: 'Returned', equipmentKit: 'Returned', safetyDeposit: 'Returned', labCard: 'Returned' }
-    },
-    {
-      id: 'APP-103', rollNo: '21CS031', name: 'Priya Mehta', branch: 'Computer Science', batch: '2025', email: 'priya.m@college.edu',
-      submittedAt: new Date().toISOString(), status: 'Pending',
-      documents: [{ name: 'Final_Project_Signoff.pdf', type: 'PDF', verified: false }],
-      equipment: { labManual: 'Returned', equipmentKit: 'Returned', safetyDeposit: 'Returned', labCard: 'Returned' }
-    },
-    {
-      id: 'APP-104', rollNo: '21CS067', name: 'Arjun Nair', branch: 'Computer Science', batch: '2025', email: 'arjun.n@college.edu',
-      submittedAt: subDays(new Date(), 4).toISOString(), status: 'Pending',
-      documents: [{ name: 'Clearance_Form.pdf', type: 'PDF', verified: false }],
-      equipment: { labManual: 'Returned', equipmentKit: 'Pending', safetyDeposit: 'Returned', labCard: 'Returned' }
-    },
-    {
-      id: 'APP-105', rollNo: '21CS019', name: 'Fatima Khan', branch: 'Computer Science', batch: '2025', email: 'fatima.k@college.edu',
-      submittedAt: subDays(new Date(), 2).toISOString(), status: 'Pending',
-      documents: [{ name: 'Clearance_Form.pdf', type: 'PDF', verified: false }],
-      equipment: { labManual: 'Returned', equipmentKit: 'Returned', safetyDeposit: 'Pending', labCard: 'Returned' }
-    },
-    // Adding placeholder rows
-    ...Array.from({length: 9}).map((_, i) => ({
-      id: `APP-20${i}`, rollNo: `21CS10${i}`, name: `Dummy Student ${i}`, branch: 'Computer Science', batch: '2025', email: `dummy${i}@college.edu`,
-      submittedAt: subDays(new Date(), Math.floor(Math.random() * 5)).toISOString(), status: 'Pending' as any,
-      documents: [{ name: 'Clearance_Form.pdf', type: 'PDF', verified: false }],
-      equipment: { labManual: 'Returned', equipmentKit: 'Returned', safetyDeposit: 'Returned', labCard: 'Returned' } as any
-    }))
-  ]);
+  useEffect(() => {
+    fetchSyncData();
+  }, [currentUser]);
 
-  const [activities, setActivities] = useState<ActivityEvent[]>([
-    { id: '1', type: 'approved', title: 'Approved Raj Sharma', timestamp: subHours(new Date(), 2).toISOString() },
-    { id: '2', type: 'equipment', title: 'Rohan Patil returned Equip Kit', timestamp: subHours(new Date(), 4).toISOString() },
-    { id: '3', type: 'submission', title: 'New submission from Priya Mehta', timestamp: subHours(new Date(), 5).toISOString() },
-    { id: '4', type: 'flagged', title: 'Flagged Arjun Nair (Kit Due)', timestamp: subDays(new Date(), 1).toISOString() },
-    { id: '5', type: 'nudge', title: 'System Nudge: 3 Overdue pending', timestamp: subDays(new Date(), 2).toISOString() }
-  ]);
-
-  const approveStudent = (id: string, notes: string) => {
-    setLabStudents(prev => prev.map(s => 
-      s.id === id ? { ...s, status: 'Approved', decisionDate: new Date().toISOString(), decisionComment: 'Approved via Checklist' } : s
-    ));
-    setActivities(prev => [{ id: Date.now().toString(), type: 'approved', title: `Approved App ${id}`, timestamp: new Date().toISOString() }, ...prev]);
+  const refresh = async () => {
+    setLoading(true);
+    await fetchSyncData();
   };
 
-  const flagStudent = (id: string, comment: string, notes: string) => {
-    setLabStudents(prev => prev.map(s => 
-      s.id === id ? { ...s, status: 'Flagged', decisionDate: new Date().toISOString(), decisionComment: comment } : s
-    ));
-    setActivities(prev => [{ id: Date.now().toString(), type: 'flagged', title: `Flagged App ${id}`, timestamp: new Date().toISOString() }, ...prev]);
+  const approveStudent = async (id: string, notes: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/lab/approve', { appId: id, notes }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const toggleEquipmentStatus = (id: string, key: keyof EquipmentStatus) => {
-    setLabStudents(prev => prev.map(s => {
-      if (s.id !== id) return s;
-      const current = s.equipment[key];
-      return {
-        ...s,
-        equipment: {
-          ...s.equipment,
-          [key]: current === 'Returned' ? 'Pending' : 'Returned'
-        }
-      };
-    }));
+  const flagStudent = async (id: string, comment: string, notes: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/lab/flag', { appId: id, comment, notes }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const executeBulkReturn = (ids: string[]) => {
-    setLabStudents(prev => prev.map(s => {
-      if (!ids.includes(s.id)) return s;
-      return {
-        ...s,
-        equipment: { labManual: 'Returned', equipmentKit: 'Returned', safetyDeposit: 'Returned', labCard: 'Returned' }
-      };
-    }));
+  const toggleEquipmentStatus = async (id: string, key: keyof EquipmentStatus) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/lab/equipment', { appId: id, key }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const undoDecision = (id: string) => {
-    // Only undo if within 24h mock check (the UI will check, but we just reset here)
-    setLabStudents(prev => prev.map(s => 
-      s.id === id ? { ...s, status: 'Pending', decisionDate: undefined, decisionComment: undefined } : s
-    ));
+  const executeBulkReturn = async (ids: string[]) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/lab/equipment/bulk', { ids }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
+  };
+
+  const undoDecision = async (id: string) => {
+     const token = localStorage.getItem('nexus_token');
+     await axios.post('/api/lab/undo', { appId: id }, { headers: { Authorization: `Bearer ${token}` }});
+     fetchSyncData();
   };
 
   return (
     <LabContext.Provider value={{
-      profile, labStudents, activities,
+      profile, labStudents, activities, loading, refresh,
       approveStudent, flagStudent, toggleEquipmentStatus, executeBulkReturn, undoDecision
     }}>
       {children}

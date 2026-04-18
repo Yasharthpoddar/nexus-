@@ -14,7 +14,7 @@ export function ReviewApp() {
   const navigate = useNavigate();
   const { pendingApps, reviewedApps, approveApplication, flagApplication, toggleDocumentVerification } = useAuthority();
   const { currentUser } = useAuth();
-  const basePath = `/${currentUser?.role === 'principal' ? 'principal' : 'hod'}`;
+  const basePath = `/hod`;
 
   const application = pendingApps.find(a => a.id === id) || reviewedApps.find(a => a.id === id);
   
@@ -50,7 +50,7 @@ export function ReviewApp() {
     }, 2000);
   };
 
-  const selectedDocument = application.documents.find(d => d.id === activeDoc);
+  const selectedDocument = (application.documents || []).find(d => d.id === activeDoc);
 
   return (
     <div className="p-6 md:p-10 max-w-[1600px] mx-auto space-y-8 relative">

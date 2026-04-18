@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from 'motion/react';
 export function ReviewedApps() {
   const { reviewedApps, undoDecision } = useAuthority();
   const { currentUser } = useAuth();
-  const basePath = `/${currentUser?.role === 'principal' ? 'principal' : 'hod'}`;
+  const basePath = `/hod`;
   
   const [activeTab, setActiveTab] = useState<'All'|'Approved'|'Rejected'>('All');
   const [search, setSearch] = useState('');

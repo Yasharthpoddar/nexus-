@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router';
 import { useAdmin } from '../../context/AdminContext';
-import { useAuth } from '../../context/AuthContext';
 import { 
-  Plus, Send, Mail, CheckCircle2, ShieldCheck, X
+  Plus, Send, Mail, CheckCircle2, ShieldCheck, X, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -21,10 +20,11 @@ function Toast({ message, visible }: { message: string, visible: boolean }) {
 
 export function AuthorityManagement() {
   const { authorities, addAuthority } = useAdmin();
-  const { addUser } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [showToast, setShowToast] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({ name: '', email: '', role: 'Lab In-charge', department: 'Library', password: '' });
 
@@ -34,29 +34,31 @@ export function AuthorityManagement() {
     setTimeout(() => setShowToast(false), 3000);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if(formData.name && formData.email && formData.password) {
-      addAuthority(formData);
-      
-      // Determine correct system role and routing path
-      let role = 'lab-incharge';
-      let redirectTo = '/lab/dashboard';
-      if (formData.role === 'HOD') { role = 'hod'; redirectTo = '/hod/dashboard'; }
-      if (formData.role === 'Principal') { role = 'principal'; redirectTo = '/principal/dashboard'; }
-      
-      addUser({
-        id: `a_${Date.now()}`,
+    setFormError('');
+    setSubmitting(true);
+    try {
+      // Map display label -> sub_role value the backend expects
+      const subRoleMap: Record<string, string> = {
+        'Lab In-charge': 'lab-incharge',
+        'HOD': 'hod',
+        'Principal': 'principal',
+      };
+      await addAuthority({
+        name: formData.name,
         email: formData.email,
         password: formData.password,
-        role: role as any,
-        name: formData.name,
-        redirectTo
+        role: subRoleMap[formData.role] || 'lab-incharge',
+        department: formData.department,
       });
-
       setModalOpen(false);
       setFormData({ name: '', email: '', role: 'Lab In-charge', department: 'Library', password: '' });
-      triggerToast('Authority Account Created Successfully');
+      triggerToast('Authority Account Created & Live in Database');
+    } catch (err: any) {
+      setFormError(err?.response?.data?.message || 'Registration failed. Email may already exist.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -154,8 +156,16 @@ export function AuthorityManagement() {
                       <label className="block text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Temporary Password</label>
                       <input required type="text" className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none font-mono text-sm focus:bg-white" value={formData.password} onChange={e=>setFormData({...formData, password: e.target.value})} />
                     </div>
-                    <button type="submit" className="w-full mt-4 bg-[#121212] text-white py-4 font-black uppercase tracking-widest hover:bg-[#F0C020] hover:text-[#121212] transition-colors border-4 border-transparent hover:border-[#121212]">
-                      Create Authority Account
+
+                    {formError && (
+                      <div className="flex items-center gap-3 bg-[#D02020]/10 border-2 border-[#D02020] p-3">
+                        <AlertCircle className="w-4 h-4 text-[#D02020] shrink-0" />
+                        <p className="font-bold text-xs text-[#D02020] uppercase tracking-wide">{formError}</p>
+                      </div>
+                    )}
+
+                    <button type="submit" disabled={submitting} className="w-full mt-4 bg-[#121212] text-white py-4 font-black uppercase tracking-widest hover:bg-[#F0C020] hover:text-[#121212] transition-colors border-4 border-transparent hover:border-[#121212] disabled:opacity-50 disabled:cursor-not-allowed">
+                      {submitting ? 'Creating...' : 'Create Authority Account'}
                     </button>
                  </form>
               </motion.div>

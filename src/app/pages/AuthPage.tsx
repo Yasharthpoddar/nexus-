@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useAuth } from '../context/AuthContext';
-import { MockUser } from '../context/mockUsers';
+import { useAuth, User } from '../context/AuthContext';
 import { 
   Eye, 
   EyeOff, 
-  CheckCircle2, 
-  ArrowLeft
+  CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -27,21 +25,33 @@ const InputField = ({ label, type = "text", error, ...props }: any) => {
 
 export function AuthPage() {
   const navigate = useNavigate();
-  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [successAnimation, setSuccessAnimation] = useState(false);
-  const [redirectingUser, setRedirectingUser] = useState<MockUser | null>(null);
+  const [redirectingUser, setRedirectingUser] = useState<User | null>(null);
 
-  const completeAuthentication = (user: MockUser) => {
+  const getRouteForRole = (user: User) => {
+    if (user.role === 'student') return '/dashboard';
+    const effectiveRole = user.sub_role || user.role;
+    switch(effectiveRole) {
+      case 'lab-incharge': return '/lab/dashboard';
+      case 'hod': return '/hod/dashboard';
+      case 'principal': return '/principal/dashboard';
+      case 'admin': return '/admin/dashboard';
+      default: return '/dashboard';
+    }
+  };
+
+  const completeAuthentication = (user: User) => {
     setRedirectingUser(user);
     setSuccessAnimation(true);
     setTimeout(() => {
-      navigate(user.redirectTo);
+      navigate(getRouteForRole(user));
     }, 1500);
   };
 
   const getRedirectMessage = () => {
     if (!redirectingUser) return 'Redirecting...';
-    switch (redirectingUser.role) {
+    const effectiveRole = redirectingUser.sub_role || redirectingUser.role;
+    switch (effectiveRole) {
       case 'student': return 'Redirecting to Student Dashboard...';
       case 'lab-incharge': return 'Redirecting to Lab In-charge Portal...';
       case 'hod': return 'Redirecting to HOD Portal...';
@@ -79,24 +89,12 @@ export function AuthPage() {
            <div className="w-14 h-14 bg-[#F0C020] border-4 border-[#121212] rounded-full flex items-center justify-center mb-4">
               <span className="font-black text-xl tracking-tight leading-none translate-x-[1px]">NU</span>
            </div>
-           {!forgotPasswordMode && (
-             <h1 className="font-black uppercase text-xl tracking-tight">Sign In</h1>
-           )}
+           <h1 className="font-black uppercase text-xl tracking-tight">Sign In</h1>
         </div>
 
-        {forgotPasswordMode ? (
-          <ForgotPasswordView 
-            onBack={() => setForgotPasswordMode(false)}
-            onComplete={completeAuthentication}
-          />
-        ) : (
-          <div className="p-6 md:p-8 pt-0">
-            <SignInView 
-              onForgot={() => setForgotPasswordMode(true)}
-              onComplete={completeAuthentication}
-            />
-          </div>
-        )}
+        <div className="p-6 md:p-8 pt-0">
+          <SignInView onComplete={completeAuthentication} />
+        </div>
       </div>
     </div>
   );
@@ -104,21 +102,25 @@ export function AuthPage() {
 
 // --- Sign In Component ---
 
-function SignInView({ onForgot, onComplete }: any) {
+function SignInView({ onComplete }: any) {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const isFormValid = email.trim().length > 0 && password.length >= 6;
+  const isFormValid = email.trim().length > 0 && password.length >= 6 && !isLoading;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) return;
     
     setAuthError(null);
-    const result = login(email, password);
+    setIsLoading(true);
+    
+    const result = await login(email, password);
+    setIsLoading(false);
     
     if (result.success && result.user) {
       onComplete(result.user);
@@ -164,10 +166,6 @@ function SignInView({ onForgot, onComplete }: any) {
           <input type="checkbox" className="w-4 h-4 border-2 border-[#121212] accent-[#121212] cursor-pointer" />
           <span className="text-sm font-bold opacity-80 group-hover:opacity-100 transition-opacity">Remember me</span>
         </label>
-        
-        <button type="button" onClick={onForgot} className="text-sm font-bold text-[#1040C0] hover:underline">
-          Forgot password?
-        </button>
       </div>
 
       <button 
@@ -175,80 +173,12 @@ function SignInView({ onForgot, onComplete }: any) {
         disabled={!isFormValid}
         className="w-full py-4 bg-[#121212] text-white font-black uppercase tracking-widest border-4 border-transparent disabled:opacity-50 disabled:cursor-not-allowed hover:bg-black hover:shadow-[4px_4px_0px_#1040C0] hover:-translate-y-1 transition-all"
       >
-        Sign In
+        {isLoading ? 'Authenticating...' : 'Sign In'}
       </button>
 
       <div className="mt-8 pt-6 border-t font-medium text-xs text-center border-[#E0E0E0] opacity-50">
         Enter your credentials to access the internal workspace.
       </div>
     </form>
-  );
-}
-
-// --- Forgot Password Component ---
-
-function ForgotPasswordView({ onBack, onComplete }: any) {
-  const [step, setStep] = useState(1);
-  const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
-  const [pwd, setPwd] = useState('');
-  
-  const handleSendOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    if(email.includes('@')) setStep(2);
-  };
-
-  const handleReset = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Conceptually we fake a password reset success, returning generic student for test if needed.
-    // In strict architectural implementation, they must sign in after reset anyway.
-    if(otp.length === 6 && pwd.length >= 8) onBack(); 
-  }
-
-  return (
-    <div className="p-6 md:p-8 flex flex-col h-full min-h-[460px]">
-      <h2 className="font-black text-2xl uppercase tracking-tight mb-2">Reset Password</h2>
-      <p className="text-sm font-medium opacity-80 mb-8 pb-4 border-b-4 border-[#121212]">
-        {step === 1 ? 'Enter your registered college email.' : 'Enter the OTP and your new password.'}
-      </p>
-
-      {step === 1 ? (
-        <form onSubmit={handleSendOtp} className="flex-1 flex flex-col">
-          <InputField 
-            label="College Email" 
-            type="email"
-            value={email}
-            onChange={(e: any) => setEmail(e.target.value)}
-          />
-          <button 
-            type="submit"
-            disabled={!email.includes('@')}
-            className="w-full mt-auto py-4 bg-[#1040C0] text-white font-black uppercase tracking-widest border-2 border-[#121212] disabled:opacity-50"
-          >
-            Send Reset OTP
-          </button>
-        </form>
-      ) : (
-        <form onSubmit={handleReset} className="flex-1 flex flex-col gap-4">
-           <div>
-             <label className="block text-sm font-bold text-gray-800 mb-1">6-Digit OTP</label>
-             <input type="text" maxLength={6} className="w-full p-3 font-mono tracking-[0.5em] text-center bg-[#F9F9F9] border-2 border-[#121212] outline-none" value={otp} onChange={e=>setOtp(e.target.value)}/>
-           </div>
-           <InputField label="New Password" type="password" value={pwd} onChange={(e: any) => setPwd(e.target.value)} />
-           
-           <button 
-            type="submit"
-            disabled={otp.length !== 6 || pwd.length < 8}
-            className="w-full mt-auto py-4 bg-[#D02020] text-white font-black uppercase tracking-widest border-2 border-[#121212] disabled:opacity-50"
-          >
-            Reset Password
-          </button>
-        </form>
-      )}
-
-      <button onClick={onBack} className="mt-6 text-sm font-bold text-center w-full opacity-60 hover:opacity-100 flex items-center justify-center gap-2">
-        <ArrowLeft className="w-4 h-4" /> Back to sign in
-      </button>
-    </div>
   );
 }

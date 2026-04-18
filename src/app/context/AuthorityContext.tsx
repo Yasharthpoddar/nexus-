@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState } from 'react';
-import { formatDistanceToNow, subDays, subHours } from 'date-fns';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
+import { useAuth } from './AuthContext';
 
-export type ApplicationStatus = 'Pending' | 'Approved' | 'Rejected' | 'Flagged';
+export type ApplicationStatus = 'Pending' | 'Cleared' | 'Action Required' | 'Approved' | 'Flagged';
 
 export interface Application {
   id: string;
@@ -21,7 +22,7 @@ export interface Application {
 
 export interface AuthNotification {
   id: string;
-  type: 'submission' | 'stale' | 'chain' | 'system';
+  type: 'submission' | 'stale' | 'chain' | 'system' | 'approval' | 'rejection';
   title: string;
   description: string;
   timestamp: string;
@@ -34,175 +35,152 @@ interface AuthorityState {
   pendingApps: Application[];
   reviewedApps: Application[];
   notifications: AuthNotification[];
-  approveApplication: (id: string, comment?: string) => void;
-  flagApplication: (id: string, comment: string) => void;
-  batchAction: (ids: string[], action: 'Approve' | 'Flag') => void;
-  undoDecision: (id: string) => void;
-  markNotificationRead: (id: string) => void;
-  markAllRead: () => void;
-  toggleDocumentVerification: (appId: string, docId: string) => void;
+  loading: boolean;
+  approveApplication: (id: string, comment?: string) => Promise<void>;
+  flagApplication: (id: string, comment: string) => Promise<void>;
+  batchAction: (ids: string[], action: 'Approve' | 'Flag') => Promise<void>;
+  undoDecision: (id: string) => Promise<void>;
+  markNotificationRead: (id: string) => Promise<void>;
+  markAllRead: () => Promise<void>;
+  toggleDocumentVerification: (appId: string, docId: string) => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 const AuthorityContext = createContext<AuthorityState | undefined>(undefined);
 
 export function AuthorityProvider({ children }: { children: React.ReactNode }) {
-  const [profile] = useState({
+  const { currentUser } = useAuth();
+
+  const [profile, setProfile] = useState({
     name: 'Prof. Anita Sharma',
     role: 'HOD',
     department: 'Computer Science'
   });
 
-  const [pendingApps, setPendingApps] = useState<Application[]>([
-    {
-      id: 'APP-101', studentName: 'Hritani Joshi', rollNo: '21CS088', branch: 'CSE', batch: '2025', email: 'hritani.j@nexus.edu',
-      submissionDate: subDays(new Date(), 3).toISOString(), daysWaiting: 3, status: 'Pending',
-      documents: [
-        { id: 'd1', name: 'ID_Card_Scan.pdf', type: 'ID Card', size: '1.2MB', isVerified: true, date: subDays(new Date(), 3).toISOString() },
-        { id: 'd2', name: 'Lab_Clearance_Slip.png', type: 'Lab Receipt', size: '2.4MB', isVerified: true, date: subDays(new Date(), 3).toISOString() }
-      ],
-      history: [
-        { id: 'h1', actor: 'Hritani Joshi', role: 'Student', action: 'Submitted Application', date: subDays(new Date(), 3).toISOString() },
-        { id: 'h2', actor: 'Dr. R. K. Singh', role: 'Lab In-charge', action: 'Approved Application', comment: 'All lab dues cleared.', date: subDays(new Date(), 2).toISOString() }
-      ]
-    },
-    {
-      id: 'APP-102', studentName: 'Rohan Patil', rollNo: '21CS042', branch: 'CSE', batch: '2025', email: 'rohan.p@nexus.edu',
-      submissionDate: subDays(new Date(), 1).toISOString(), daysWaiting: 1, status: 'Pending',
-      documents: [
-        { id: 'd3', name: 'Library_Dues.pdf', type: 'Library Receipt', size: '1.1MB', isVerified: false, date: subDays(new Date(), 1).toISOString() }
-      ],
-      history: [
-        { id: 'h3', actor: 'Rohan Patil', role: 'Student', action: 'Submitted Application', date: subDays(new Date(), 1).toISOString() },
-        { id: 'h4', actor: 'Dr. R. K. Singh', role: 'Lab In-charge', action: 'Approved Application', date: subHours(new Date(), 12).toISOString() }
-      ]
-    },
-    {
-      id: 'APP-103', studentName: 'Priya Mehta', rollNo: '21CS031', branch: 'CSE', batch: '2025', email: 'priya.m@nexus.edu',
-      submissionDate: new Date().toISOString(), daysWaiting: 0, status: 'Pending',
-      documents: [
-        { id: 'd4', name: 'Fee_Receipt.jpeg', type: 'Fee Receipt', size: '800KB', isVerified: false, date: new Date().toISOString() }
-      ],
-      history: [
-        { id: 'h5', actor: 'Priya Mehta', role: 'Student', action: 'Submitted Application', date: new Date().toISOString() },
-        { id: 'h6', actor: 'Dr. R. K. Singh', role: 'Lab In-charge', action: 'Approved Application', date: new Date().toISOString() }
-      ]
-    },
-    {
-      id: 'APP-104', studentName: 'Arjun Nair', rollNo: '21CS067', branch: 'CSE', batch: '2025', email: 'arjun.n@nexus.edu',
-      submissionDate: subDays(new Date(), 4).toISOString(), daysWaiting: 4, status: 'Pending',
-      documents: [
-        { id: 'd5', name: 'Student_ID.pdf', type: 'ID Card', size: '1.5MB', isVerified: true, date: subDays(new Date(), 4).toISOString() }
-      ],
-      history: [
-        { id: 'h7', actor: 'Arjun Nair', role: 'Student', action: 'Submitted Application', date: subDays(new Date(), 4).toISOString() },
-        { id: 'h8', actor: 'Dr. R. K. Singh', role: 'Lab In-charge', action: 'Approved Application', date: subDays(new Date(), 3).toISOString() }
-      ]
-    },
-    {
-      id: 'APP-105', studentName: 'Fatima Khan', rollNo: '21CS019', branch: 'CSE', batch: '2025', email: 'fatima.k@nexus.edu',
-      submissionDate: subDays(new Date(), 2).toISOString(), daysWaiting: 2, status: 'Pending',
-      documents: [],
-      history: [
-        { id: 'h9', actor: 'Fatima Khan', role: 'Student', action: 'Submitted Application', date: subDays(new Date(), 2).toISOString() }
-      ]
-    },
-    // ... 7 more dummy placeholders
-    ...Array.from({length: 7}).map((_, i) => ({
-      id: `APP-20${i}`, studentName: `Placeholder Student ${i+1}`, rollNo: `21CS10${i}`, branch: 'CSE', batch: '2025', email: `test${i}@nexus.edu`,
-      submissionDate: new Date().toISOString(), daysWaiting: 0, status: 'Pending' as ApplicationStatus, documents: [], history: []
-    }))
-  ]);
+  const [pendingApps, setPendingApps] = useState<Application[]>([]);
+  const [reviewedApps, setReviewedApps] = useState<Application[]>([]);
+  const [notifications, setNotifications] = useState<AuthNotification[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [reviewedApps, setReviewedApps] = useState<Application[]>([
-    {
-       id: 'APP-090', studentName: 'Aisha Gupta', rollNo: '21CS011', branch: 'CSE', batch: '2025', email: 'aisha.g@nexus.edu',
-       submissionDate: subDays(new Date(), 5).toISOString(), daysWaiting: 0, status: 'Approved',
-       documents: [], history: [], decisionComment: 'All documents verified. Cleared.', decisionDate: subDays(new Date(), 1).toISOString()
-    },
-    {
-       id: 'APP-091', studentName: 'Karan Malhotra', rollNo: '21CS028', branch: 'CSE', batch: '2025', email: 'karan.m@nexus.edu',
-       submissionDate: subDays(new Date(), 6).toISOString(), daysWaiting: 0, status: 'Flagged',
-       documents: [], history: [], decisionComment: 'Lab manual missing. Please upload.', decisionDate: subDays(new Date(), 2).toISOString()
+  const fetchSyncData = async () => {
+    // Accept both: admin users with sub_role=hod, AND users with role=hod
+    if (!currentUser) {
+      setLoading(false);
+      return;
     }
-  ]);
+    const isHodUser = currentUser.sub_role === 'hod' || currentUser.role === 'hod';
+    if (!isHodUser) {
+      setLoading(false);
+      return;
+    }
 
-  const [notifications, setNotifications] = useState<AuthNotification[]>([
-    { id: 'n1', type: 'stale', title: 'Stale Application Alert', description: "You have not reviewed Hritani Joshi's application for 3 days. Please action it.", timestamp: subHours(new Date(), 2).toISOString(), read: false, link: '/authority/pending' },
-    { id: 'n2', type: 'stale', title: 'Stale Application Alert', description: "You have not reviewed Arjun Nair's application for 4 days. Please action it.", timestamp: subHours(new Date(), 4).toISOString(), read: false, link: '/authority/pending' },
-    { id: 'n3', type: 'submission', title: 'New Submission', description: 'Priya Mehta submitted her clearance package.', timestamp: subHours(new Date(), 6).toISOString(), read: false, link: '/authority/pending' },
-    { id: 'n4', type: 'chain', title: 'Chain Completion', description: 'Principal has given final approval for Sneha Rao.', timestamp: subDays(new Date(), 1).toISOString(), read: true },
-    { id: 'n5', type: 'system', title: 'System Maintenance', description: 'Nexus will undergo maintenance on Sunday 2AM.', timestamp: subDays(new Date(), 2).toISOString(), read: true }
-  ]);
+    try {
+      const token = localStorage.getItem('nexus_token');
+      const { data } = await axios.get('/api/hod/sync', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const resData = data.data;
 
-  // Actions
-  const processDecision = (id: string, newStatus: ApplicationStatus, comment?: string) => {
-    setPendingApps(prev => {
-      const app = prev.find(a => a.id === id);
-      if(!app) return prev;
-      
-      const processedApp = { 
-        ...app, 
-        status: newStatus, 
-        decisionComment: comment || (newStatus === 'Approved' ? 'Approved by HOD' : ''),
-        decisionDate: new Date().toISOString(),
-        history: [
-          ...app.history, 
-          { 
-            id: Date.now().toString(), 
-            actor: profile.name, 
-            role: profile.role, 
-            action: newStatus === 'Approved' ? 'Approved Application' : 'Flagged Application', 
-            comment: comment,
-            date: new Date().toISOString() 
-          }
-        ]
-      };
-      
-      setReviewedApps(r => [processedApp, ...r]);
-      return prev.filter(a => a.id !== id);
-    });
+      setProfile({
+        name: currentUser.name,
+        role: 'HOD',
+        department: 'Computer Science'
+      });
+
+      // Map Cleared/Action Required to Approved/Flagged for UI visual parity
+      const mapExtState = (s: string) => s === 'Cleared' ? 'Approved' : s === 'Action Required' ? 'Flagged' : s;
+
+      setPendingApps(resData.pendingApps.map((a: any) => ({ ...a, status: mapExtState(a.status) })));
+      setReviewedApps(resData.reviewedApps.map((a: any) => ({ ...a, status: mapExtState(a.status) })));
+
+      // Parse notifications — backend sends raw DB rows; map to AuthNotification shape
+      const rawNotifs: any[] = resData.notifications || [];
+      const mapped: AuthNotification[] = rawNotifs.map((n: any) => {
+        let parsed: any = {};
+        try { parsed = typeof n.message === 'string' ? JSON.parse(n.message) : n.message; } catch { parsed = {}; }
+        return {
+          id: n.id,
+          type: parsed.type || 'system',
+          title: parsed.title || 'Notification',
+          description: parsed.description || (typeof n.message === 'string' ? n.message : ''),
+          timestamp: n.created_at || new Date().toISOString(),
+          read: n.is_read || false,
+        };
+      });
+      setNotifications(mapped);
+
+    } catch (err) {
+      console.error('Failed to sync hod data', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const approveApplication = (id: string, comment?: string) => processDecision(id, 'Approved', comment);
-  const flagApplication = (id: string, comment: string) => processDecision(id, 'Flagged', comment);
+  useEffect(() => {
+    fetchSyncData();
+  }, [currentUser]);
 
-  const batchAction = (ids: string[], action: 'Approve' | 'Flag') => {
-    ids.forEach(id => {
-      processDecision(id, action === 'Approve' ? 'Approved' : 'Flagged', action === 'Approve' ? 'Bulk approved' : 'Bulk flagged');
-    });
+  const refresh = async () => {
+    setLoading(true);
+    await fetchSyncData();
   };
 
-  const undoDecision = (id: string) => {
-    setReviewedApps(prev => {
-      const app = prev.find(a => a.id === id);
-      if(!app) return prev;
-      
-      // Remove latest history item
-      const newHistory = [...app.history];
-      newHistory.pop();
-
-      const restoredApp = { ...app, status: 'Pending' as ApplicationStatus, decisionComment: undefined, decisionDate: undefined, history: newHistory };
-      setPendingApps(p => [restoredApp, ...p]);
-      return prev.filter(a => a.id !== id);
-    });
+  const approveApplication = async (id: string, comment?: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/hod/approve', { appId: id, comment }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const markNotificationRead = (id: string) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-  const markAllRead = () => setNotifications(prev => prev.map(n => ({...n, read: true})));
+  const flagApplication = async (id: string, comment: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/hod/flag', { appId: id, comment }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
+  };
 
-  const toggleDocumentVerification = (appId: string, docId: string) => {
-    setPendingApps(prev => prev.map(app => {
-      if(app.id !== appId) return app;
-      return {
-        ...app,
-        documents: app.documents.map(d => d.id === docId ? { ...d, isVerified: !d.isVerified } : d)
-      };
-    }));
+  // Batch: fan out to individual calls (same as Principal — avoids needing a separate batch endpoint)
+  const batchAction = async (ids: string[], action: 'Approve' | 'Flag') => {
+    const token = localStorage.getItem('nexus_token');
+    const hdrs = { Authorization: `Bearer ${token}` };
+    await Promise.all(ids.map(id =>
+      action === 'Approve'
+        ? axios.post('/api/hod/approve', { appId: id, comment: 'Batch approved by HOD' }, { headers: hdrs })
+        : axios.post('/api/hod/flag',    { appId: id, comment: 'Batch flagged by HOD'   }, { headers: hdrs })
+    ));
+    fetchSyncData();
+  };
+
+  const undoDecision = async (id: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/hod/undo', { appId: id }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
+  };
+
+  const markNotificationRead = async (id: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/hod/notifications/read', { notifId: id }, { headers: { Authorization: `Bearer ${token}` }});
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const markAllRead = async () => {
+    const token = localStorage.getItem('nexus_token');
+    // Mark all unread notifications read via individual calls (no bulk endpoint needed)
+    const unread = notifications.filter(n => !n.read);
+    await Promise.all(unread.map(n =>
+      axios.post('/api/hod/notifications/read', { notifId: n.id }, { headers: { Authorization: `Bearer ${token}` }})
+    ));
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const toggleDocumentVerification = async (appId: string, docId: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/hod/document/verify', { docId }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
   return (
     <AuthorityContext.Provider value={{
-      profile, pendingApps, reviewedApps, notifications,
+      profile, pendingApps, reviewedApps, notifications, loading, refresh,
       approveApplication, flagApplication, batchAction, undoDecision,
       markNotificationRead, markAllRead, toggleDocumentVerification
     }}>
@@ -211,8 +189,10 @@ export function AuthorityProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export const useAuthority = () => {
+export function useAuthority() {
   const context = useContext(AuthorityContext);
-  if (!context) throw new Error('useAuthority must be used within an AuthorityProvider');
+  if (context === undefined) {
+    throw new Error('useAuthority must be used within an AuthorityProvider');
+  }
   return context;
-};
+}

@@ -19,8 +19,27 @@ import { StepCard } from '../components/StepCard';
 import { FeatureCard } from '../components/FeatureCard';
 import { PaymentCard } from '../components/PaymentCard';
 import { useNavigate } from 'react-router';
+import { useAuth } from '../context/AuthContext';
+import { useEffect } from 'react';
 
 export default function LandingPage() {
+  const navigate = useNavigate();
+  const { currentUser } = useAuth();
+  
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.role === 'student') return navigate('/dashboard', { replace: true });
+      const effectiveRole = currentUser.sub_role || currentUser.role;
+      switch(effectiveRole) {
+        case 'lab-incharge': return navigate('/lab/dashboard', { replace: true });
+        case 'hod': return navigate('/hod/dashboard', { replace: true });
+        case 'principal': return navigate('/principal/dashboard', { replace: true });
+        case 'admin': return navigate('/admin/dashboard', { replace: true });
+        default: return navigate('/dashboard', { replace: true });
+      }
+    }
+  }, [currentUser, navigate]);
+
   return (
     <div className="min-h-screen bg-[#F0F0F0]">
       <HeroSection />

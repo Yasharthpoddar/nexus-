@@ -1,66 +1,22 @@
-import React, { createContext, useContext, useState } from 'react';
-import { formatDistanceToNow, subDays, subHours } from 'date-fns';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
+import { useAuth } from './AuthContext';
 
-export type DeptStatus = 'Cleared' | 'Pending' | 'Blocked';
-export type CertStatus = 'Ready to Issue' | 'Already Issued' | 'Not Ready';
+export type DeptStatus = 'Cleared' | 'Pending' | 'Action Required' | 'Blocked';
+export type CertStatus = 'Ready to Issue' | 'Already Issued' | 'Not Ready' | 'Ready';
 
-export interface DepartmentNode {
-  id: string;
-  name: string;
-  authority: string;
-  status: DeptStatus;
-  lastUpdated: string;
-}
-
+export interface DepartmentNode { id: string; name: string; authority: string; status: DeptStatus; lastUpdated: string; }
 export interface AdminStudent {
-  id: string;
-  name: string;
-  rollNo: string;
-  branch: string;
-  batch: string;
-  email: string;
-  phone: string;
-  enrollmentDate: string;
-  isBlocked: boolean;
-  departments: DepartmentNode[];
-  documents: { id: string, name: string, type: string, date: string, status: 'Verified' | 'Rejected' | 'Pending' }[];
-  payments: { id: string, date: string, dept: string, amount: string, receiptNo: string, status: string }[];
-  adminNotes: string;
-  certStatus: CertStatus;
-  certificateNo?: string;
-  issueDate?: string;
+  id: string; name: string; rollNo: string; branch: string; batch: string; email: string; phone: string;
+  enrollmentDate: string; isBlocked: boolean; departments: DepartmentNode[]; documents: any[]; payments: any[];
+  adminNotes: string; certStatus: CertStatus; certificateNo?: string; issueDate?: string;
 }
-
 export interface AuthorityNode {
-  id: string;
-  name: string;
-  role: string;
-  department: string;
-  email: string;
-  joined: string;
-  pendingCount: number;
-  reviewedCount: number;
-  avgTimeDays: number;
-  isOnline: boolean;
+  id: string; name: string; role: string; department: string; email: string; joined: string;
+  pendingCount: number; reviewedCount: number; avgTimeDays: number; isOnline: boolean;
 }
-
-export interface SystemSettings {
-  databaseOnline: boolean;
-  emailNudgeActive: boolean;
-  paymentGatewayActive: boolean;
-  qrServiceOnline: boolean;
-  pipelineOrder: string[];
-  templates: { approval: string, rejection: string, nudge: string };
-}
-
-export interface CsvHistory {
-  id: string;
-  timestamp: string;
-  filename: string;
-  department: string;
-  rows: number;
-  flagged: number;
-}
+export interface SystemSettings { databaseOnline: boolean; emailNudgeActive: boolean; paymentGatewayActive: boolean; qrServiceOnline: boolean; pipelineOrder: string[]; templates: any; }
+export interface CsvHistory { id: string; timestamp: string; filename: string; department: string; rows: number; flagged: number; }
 
 interface AdminState {
   profile: { name: string, email: string };
@@ -69,229 +25,136 @@ interface AdminState {
   settings: SystemSettings;
   csvHistory: CsvHistory[];
   notifications: any[];
-  toggleStudentBlock: (id: string, blocked?: boolean) => void;
-  overrideDepartmentStatus: (studentId: string, deptId: string, status: DeptStatus) => void;
-  updateAdminNotes: (id: string, notes: string) => void;
-  issueCertificate: (studentId: string) => void;
+  loading: boolean;
+  toggleStudentBlock: (id: string, blocked?: boolean) => Promise<void>;
+  overrideDepartmentStatus: (studentId: string, deptId: string, status: DeptStatus) => Promise<void>;
+  updateAdminNotes: (id: string, notes: string) => Promise<void>;
+  issueCertificate: (studentId: string) => Promise<void>;
   updateSettingsToggle: (key: keyof Omit<SystemSettings, 'pipelineOrder'|'templates'>) => void;
   updatePipelineOrder: (order: string[]) => void;
-  addAuthority: (auth: any) => void;
-  addStudent: (stu: any) => void;
-  addCsvUpload: (csv: any) => void;
+  addAuthority: (auth: any) => Promise<void>;
+  addStudent: (stu: any) => Promise<void>;
+  addCsvUpload: (fileData: any) => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 const AdminContext = createContext<AdminState | undefined>(undefined);
 
 export function AdminProvider({ children }: { children: React.ReactNode }) {
-  const [profile] = useState({ name: 'Nexus Admin', email: 'admin@nexus.edu' });
-
-  const getMockDepartments = (isCleared = false) => [
-    { id: 'lib', name: 'Library', authority: 'Librarian', status: isCleared ? 'Cleared' : 'Pending' as DeptStatus, lastUpdated: subDays(new Date(), 4).toISOString() },
-    { id: 'lab', name: 'Laboratory', authority: 'Lab In-charge', status: isCleared ? 'Cleared' : 'Pending' as DeptStatus, lastUpdated: subDays(new Date(), 3).toISOString() },
-    { id: 'acc', name: 'Accounts', authority: 'Fin Officer', status: isCleared ? 'Cleared' : 'Pending' as DeptStatus, lastUpdated: subDays(new Date(), 2).toISOString() },
-    { id: 'hod', name: 'HOD', authority: 'Prof. Anita Sharma', status: isCleared ? 'Cleared' : 'Pending' as DeptStatus, lastUpdated: subDays(new Date(), 2).toISOString() },
-    { id: 'pri', name: 'Principal', authority: 'Dr. Vivek', status: isCleared ? 'Cleared' : 'Pending' as DeptStatus, lastUpdated: subDays(new Date(), 1).toISOString() },
-    { id: 'spo', name: 'Sports', authority: 'Sports Dir', status: isCleared ? 'Cleared' : 'Pending' as DeptStatus, lastUpdated: subDays(new Date(), 5).toISOString() },
-    { id: 'hos', name: 'Hostel', authority: 'Warden', status: isCleared ? 'Cleared' : 'Pending' as DeptStatus, lastUpdated: subDays(new Date(), 6).toISOString() }
-  ];
-
-  const defaultStudents: AdminStudent[] = [
-    {
-      id: 'STU-001', name: 'Hritani Joshi', rollNo: '21CS088', branch: 'CSE', batch: '2025', email: 'hritani.joshi@college.edu', phone: '+91 9876543210', enrollmentDate: '2021-08-15',
-      isBlocked: false, departments: getMockDepartments(true), adminNotes: '', certStatus: 'Ready to Issue',
-      documents: [{ id: 'd1', name: 'IDCard.pdf', type: 'ID', date: '2025-01-10', status: 'Verified' }],
-      payments: [{ id: 'p1', date: '2025-01-12', dept: 'Library', amount: '₹150', receiptNo: 'RC-9921', status: 'Paid' }]
-    },
-    {
-      id: 'STU-002', name: 'Rohan Patil', rollNo: '21CS042', branch: 'CSE', batch: '2025', email: 'rohan.patil@college.edu', phone: '+91 9876543211', enrollmentDate: '2021-08-15',
-      isBlocked: true, departments: getMockDepartments(false).map(d => d.id === 'lib' ? {...d, status: 'Blocked'} : d), adminNotes: 'Refuses to return Library Books.', certStatus: 'Not Ready',
-      documents: [], payments: []
-    },
-    {
-      id: 'STU-003', name: 'Priya Mehta', rollNo: '21CS031', branch: 'CSE', batch: '2025', email: 'priya.mehta@college.edu', phone: '+91 9876544410', enrollmentDate: '2021-08-15',
-      isBlocked: false, departments: getMockDepartments(false), adminNotes: '', certStatus: 'Not Ready', documents: [], payments: []
-    },
-    {
-      id: 'STU-004', name: 'Arjun Nair', rollNo: '21CS067', branch: 'CSE', batch: '2025', email: 'arjun.nair@college.edu', phone: '+91 9872243210', enrollmentDate: '2021-08-15',
-      isBlocked: false, departments: getMockDepartments(false), adminNotes: '', certStatus: 'Not Ready', documents: [], payments: []
-    },
-    {
-      id: 'STU-005', name: 'Fatima Khan', rollNo: '21CS019', branch: 'CSE', batch: '2025', email: 'fatima.khan@college.edu', phone: '+91 9811543210', enrollmentDate: '2021-08-15',
-      isBlocked: false, departments: getMockDepartments(false), adminNotes: '', certStatus: 'Not Ready', documents: [], payments: []
-    },
-    {
-      id: 'STU-006', name: 'Vikram Singh', rollNo: '21CS055', branch: 'IT', batch: '2025', email: 'vikram.s@college.edu', phone: '+91 9876541111', enrollmentDate: '2021-08-15',
-      isBlocked: false, departments: getMockDepartments(true), adminNotes: '', certStatus: 'Already Issued', certificateNo: 'NEX-25-055', issueDate: subDays(new Date(), 2).toISOString(),
-      documents: [], payments: []
-    },
-    {
-      id: 'STU-007', name: 'Aisha Gupta', rollNo: '21CS011', branch: 'ECE', batch: '2025', email: 'aisha.g@college.edu', phone: '+91 9876541122', enrollmentDate: '2021-08-15',
-      isBlocked: false, departments: getMockDepartments(false), adminNotes: '', certStatus: 'Not Ready', documents: [], payments: []
-    },
-    {
-      id: 'STU-008', name: 'Karan Malhotra', rollNo: '21CS028', branch: 'Mechanical', batch: '2025', email: 'karan.m@college.edu', phone: '+91 9876541133', enrollmentDate: '2021-08-15',
-      isBlocked: false, departments: getMockDepartments(false), adminNotes: '', certStatus: 'Not Ready', documents: [], payments: []
-    }
-  ];
-
-  const [students, setStudents] = useState<AdminStudent[]>(() => {
-    const saved = localStorage.getItem('nexus_admin_students');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (error) { console.error("Parse error:", error); }
-    }
-    return defaultStudents;
-  });
-
-  const defaultAuthorities: AuthorityNode[] = [
-    { id: 'AUTH-1', name: 'Prof. Anita Sharma', role: 'HOD', department: 'Computer Science', email: 'anita.sharma@nexus.edu', joined: '2020-04-10', pendingCount: 15, reviewedCount: 300, avgTimeDays: 1.4, isOnline: true },
-    { id: 'AUTH-2', name: 'Dr. Mehta', role: 'Lab In-charge', department: 'Computer Science', email: 'mehta@nexus.edu', joined: '2019-01-15', pendingCount: 42, reviewedCount: 890, avgTimeDays: 2.1, isOnline: false },
-    { id: 'AUTH-3', name: 'The Principal', role: 'Principal', department: 'Super Admin', email: 'principal@nexus.edu', joined: '2015-08-01', pendingCount: 5, reviewedCount: 4000, avgTimeDays: 0.5, isOnline: true }
-  ];
-
-  const [authorities, setAuthorities] = useState<AuthorityNode[]>(() => {
-    const saved = localStorage.getItem('nexus_admin_authorities');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (error) { console.error("Parse error:", error); }
-    }
-    return defaultAuthorities;
-  });
-
+  const { currentUser } = useAuth();
+  
+  const [profile, setProfile] = useState({ name: 'Nexus Admin', email: 'admin@nexus.edu' });
+  const [students, setStudents] = useState<AdminStudent[]>([]);
+  const [authorities, setAuthorities] = useState<AuthorityNode[]>([]);
   const [settings, setSettings] = useState<SystemSettings>({
-    databaseOnline: true,
-    emailNudgeActive: true,
-    paymentGatewayActive: true,
-    qrServiceOnline: true,
-    pipelineOrder: ['Library', 'Laboratory', 'Accounts', 'Sports', 'Hostel', 'HOD', 'Principal'],
-    templates: {
-      approval: "Dear Student,\n\nYour graduation clearance for [Department] has been approved.",
-      rejection: "Dear Student,\n\nYour application was flagged by [Department] due to: [Reason].",
-      nudge: "Action Required:\n\nYou have pending clearing applications exceeding the 48h SLA limit."
-    }
+    databaseOnline: true, emailNudgeActive: false, paymentGatewayActive: true, qrServiceOnline: true,
+    pipelineOrder: ['library', 'laboratory', 'accounts', 'hod', 'principal'],
+    templates: { approval: '', rejection: '', nudge: '' }
   });
+  const [csvHistory, setCsvHistory] = useState<CsvHistory[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [csvHistory, setCsvHistory] = useState<CsvHistory[]>([
-    { id: 'CSV-1', timestamp: subHours(new Date(), 26).toISOString(), filename: 'library_dues_june.csv', department: 'Library', rows: 312, flagged: 42 },
-    { id: 'CSV-2', timestamp: subDays(new Date(), 3).toISOString(), filename: 'hostel_pending_q2.csv', department: 'Hostel', rows: 58, flagged: 31 },
-    { id: 'CSV-3', timestamp: subDays(new Date(), 6).toISOString(), filename: 'lab_manual_dues.csv', department: 'Laboratory', rows: 204, flagged: 14 }
-  ]);
+  const fetchSyncData = async () => {
+    const effectiveRole = currentUser?.sub_role || currentUser?.role;
+    if (!currentUser || effectiveRole !== 'admin') { setLoading(false); return; }
+    try {
+      const token = localStorage.getItem('nexus_token');
+      const { data } = await axios.get('/api/admin/sync', { headers: { Authorization: `Bearer ${token}` }});
+      const res = data.data;
+      setProfile({ name: currentUser.name, email: currentUser.email });
+      setAuthorities(res.authorities);
+      setSettings(res.settings);
+      setCsvHistory(res.csvHistory);
+      
+      const mappedStudents = res.students.map((s: any) => ({
+         ...s,
+         certStatus: s.certStatus === 'Ready' || s.certStatus === 'Ready to Issue' ? 'Ready to Issue' : s.certStatus
+      }));
+      setStudents(mappedStudents);
 
-  const [notifications] = useState([{ id: 'n1', read: false }]); // Just for badge
-
-  const updateCertStatus = (stu: AdminStudent) => {
-    if(stu.certStatus === 'Already Issued') return stu;
-    const allCleared = stu.departments.every(d => d.status === 'Cleared');
-    return { ...stu, certStatus: allCleared ? 'Ready to Issue' : 'Not Ready' as CertStatus };
+    } catch (err) { console.error('Admin Sync Failed', err); } finally { setLoading(false); }
   };
 
-  const toggleStudentBlock = (id: string, forceBlock?: boolean) => {
-    setStudents(prev => prev.map(s => {
-      if(s.id === id) {
-        return { ...s, isBlocked: forceBlock !== undefined ? forceBlock : !s.isBlocked };
-      }
-      return s;
-    }));
+  useEffect(() => { fetchSyncData(); }, [currentUser]);
+
+  const refresh = async () => { setLoading(true); await fetchSyncData(); };
+
+  const toggleStudentBlock = async (id: string, blocked?: boolean) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/admin/students/block', { id, blocked }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const overrideDepartmentStatus = (studentId: string, deptId: string, status: DeptStatus) => {
-    setStudents(prev => prev.map(s => {
-      if(s.id === studentId) {
-        const nd = s.departments.map(d => d.id === deptId ? { ...d, status, lastUpdated: new Date().toISOString() } : d);
-        return updateCertStatus({ ...s, departments: nd });
-      }
-      return s;
-    }));
+  const overrideDepartmentStatus = async (studentId: string, deptName: string, status: DeptStatus) => {
+    const token = localStorage.getItem('nexus_token');
+    // Map Action Required -> Action Required. Frontend sends Pending / Cleared / Blocked.
+    await axios.post('/api/admin/students/override', { studentId, deptName, status }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const updateAdminNotes = (id: string, notes: string) => {
-    setStudents(prev => prev.map(s => s.id === id ? { ...s, adminNotes: notes } : s));
+  const updateAdminNotes = async (id: string, notes: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/admin/students/notes', { id, notes }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const issueCertificate = (studentId: string) => {
-    setStudents(prev => prev.map(s => {
-      if(s.id === studentId) {
-        return { ...s, certStatus: 'Already Issued', issueDate: new Date().toISOString(), certificateNo: `NEX-C-${Math.floor(Math.random()*10000)}` };
-      }
-      return s;
-    }));
+  const issueCertificate = async (studentId: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/admin/certificates/issue', { studentId }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
   const updateSettingsToggle = (key: keyof Omit<SystemSettings, 'pipelineOrder'|'templates'>) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] } as SystemSettings));
+    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const updatePipelineOrder = (order: string[]) => {
-    setSettings(prev => ({ ...prev, pipelineOrder: order }));
-  };
+  const updatePipelineOrder = (order: string[]) => setSettings(p => ({ ...p, pipelineOrder: order }));
 
-  const addAuthority = (auth: any) => {
-    const newAuth: AuthorityNode = {
-      id: `AUTH-${Date.now()}`,
+  const addAuthority = async (auth: any) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/auth/register', {
       name: auth.name,
-      role: auth.role,
-      department: auth.department,
       email: auth.email,
-      joined: new Date().toISOString(),
-      pendingCount: 0,
-      reviewedCount: 0,
-      avgTimeDays: 0,
-      isOnline: false
-    };
-    setAuthorities(prev => {
-      const updated = [...prev, newAuth];
-      localStorage.setItem('nexus_admin_authorities', JSON.stringify(updated));
-      return updated;
-    });
+      password: auth.password,
+      role: auth.role, // already mapped to sub_role value by component (e.g. 'lab-incharge')
+    }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const addStudent = (stu: any) => {
-    const newStudent: AdminStudent = {
-      id: `STU-${Math.floor(Math.random()*1000)}`,
+  const addStudent = async (stu: any) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/auth/register', {
       name: stu.name,
-      rollNo: stu.enum || `R-${Math.floor(Math.random()*1000)}`,
-      branch: stu.branch || 'CSE',
-      batch: stu.batch || '2025',
       email: stu.email,
-      phone: stu.phone || '+91 0000000000',
-      enrollmentDate: new Date().toISOString(),
-      isBlocked: false,
-      departments: getMockDepartments(false),
-      adminNotes: '',
-      certStatus: 'Not Ready',
-      documents: [],
-      payments: []
-    };
-    setStudents(prev => {
-      const updated = [newStudent, ...prev];
-      localStorage.setItem('nexus_admin_students', JSON.stringify(updated));
-      return updated;
-    });
+      password: stu.password,
+      role: 'student',
+      branch: stu.branch,
+      batch: stu.batch,
+      rollNo: stu.rollNo || null
+    }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
-  const addCsvUpload = (csv: any) => {
-    const newCsv: CsvHistory = {
-      id: `CSV-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      filename: csv.filename,
-      department: csv.department,
-      rows: csv.rows,
-      flagged: csv.flagged
-    };
-    setCsvHistory(prev => [newCsv, ...prev]);
+  const addCsvUpload = async ({ file, department }: any) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.post('/api/admin/csv/upload', { department, filename: file?.name || 'dues_batch.csv' }, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
   };
 
   return (
     <AdminContext.Provider value={{
-      profile, students, authorities, settings, csvHistory, notifications,
-      toggleStudentBlock, overrideDepartmentStatus, updateAdminNotes,
-      issueCertificate, updateSettingsToggle, updatePipelineOrder, addAuthority, addStudent, addCsvUpload
+      profile, students, authorities, settings, csvHistory, notifications, loading, refresh,
+      toggleStudentBlock, overrideDepartmentStatus, updateAdminNotes, issueCertificate,
+      updateSettingsToggle, updatePipelineOrder, addAuthority, addStudent, addCsvUpload
     }}>
       {children}
     </AdminContext.Provider>
   );
 }
 
-export const useAdmin = () => {
+export function useAdmin() {
   const context = useContext(AdminContext);
-  if (!context) throw new Error('useAdmin must be used within AdminProvider');
+  if (context === undefined) throw new Error('useAdmin must be used within an AdminProvider');
   return context;
-};
+}

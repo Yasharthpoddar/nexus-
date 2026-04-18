@@ -28,6 +28,17 @@ import { HelpSupport as AuthHelpSupport } from './pages/authority/HelpSupport';
 // Admin Space
 import { AdminProvider } from './context/AdminContext';
 import { AdminLayout } from './layouts/AdminLayout';
+
+// Principal Space
+import { PrincipalProvider } from './context/PrincipalContext';
+import { PrincipalLayout } from './layouts/PrincipalLayout';
+import { Dashboard as PrinDashboard } from './pages/principal/Dashboard';
+import { PendingApps as PrinPendingApps } from './pages/principal/PendingApps';
+import { ReviewApp as PrinReviewApp } from './pages/principal/ReviewApp';
+import { ReviewedApps as PrinReviewedApps } from './pages/principal/ReviewedApps';
+import { Notifications as PrinNotifications } from './pages/principal/Notifications';
+import { Reports as PrinReports } from './pages/principal/Reports';
+import { HelpSupport as PrinHelpSupport } from './pages/principal/HelpSupport';
 import { Dashboard as AdminDashboard } from './pages/admin/Dashboard';
 import { StudentManagement } from './pages/admin/StudentManagement';
 import { StudentDetail } from './pages/admin/StudentDetail';
@@ -49,6 +60,11 @@ import { ReviewedApplications as LabReviewed } from './pages/lab/ReviewedApplica
 import { EquipmentTracker } from './pages/lab/EquipmentTracker';
 import { Notifications as LabNotifications } from './pages/lab/Notifications';
 import { HelpSupport as LabHelpSupport } from './pages/lab/HelpSupport';
+import { VerifyDocument as LabVerifyDocument } from './pages/lab/VerifyDocument';
+
+// Document Verify Pages (HOD + Principal)
+import { VerifyDocument as HodVerifyDocument } from './pages/authority/VerifyDocument';
+import { VerifyDocument as PrinVerifyDocument } from './pages/principal/VerifyDocument';
 
 export default function App() {
   return (
@@ -75,7 +91,7 @@ export default function App() {
 
       {/* HOD Portal Route Container */}
       <Route element={
-        <ProtectedRoute allowedRoles={['hod']}>
+        <ProtectedRoute allowedSubRoles={['hod']}>
           <AuthorityProvider>
             <AuthorityLayout />
           </AuthorityProvider>
@@ -84,6 +100,7 @@ export default function App() {
         <Route path="/hod/dashboard" element={<AuthDashboard />} />
         <Route path="/hod/pending" element={<PendingApps />} />
         <Route path="/hod/review/:id" element={<ReviewApp />} />
+        <Route path="/hod/verify/:id" element={<HodVerifyDocument />} />
         <Route path="/hod/reviewed" element={<ReviewedApps />} />
         <Route path="/hod/notifications" element={<AuthNotifications />} />
         <Route path="/hod/reports" element={<Reports />} />
@@ -92,24 +109,27 @@ export default function App() {
 
       {/* Principal Portal Route Container */}
       <Route element={
-        <ProtectedRoute allowedRoles={['principal']}>
-          <AuthorityProvider>
-            <AuthorityLayout />
-          </AuthorityProvider>
+        <ProtectedRoute allowedSubRoles={['principal']}>
+          <PrincipalProvider>
+            <PrincipalLayout />
+          </PrincipalProvider>
         </ProtectedRoute>
       }>
-        <Route path="/principal/dashboard" element={<AuthDashboard />} />
-        <Route path="/principal/pending" element={<PendingApps />} />
-        <Route path="/principal/review/:id" element={<ReviewApp />} />
-        <Route path="/principal/reviewed" element={<ReviewedApps />} />
-        <Route path="/principal/notifications" element={<AuthNotifications />} />
-        <Route path="/principal/reports" element={<Reports />} />
-        <Route path="/principal/help" element={<AuthHelpSupport />} />
+        <Route path="/principal/dashboard" element={<PrinDashboard />} />
+        <Route path="/principal/pending" element={<PrinPendingApps />} />
+        <Route path="/principal/review/:id" element={<PrinReviewApp />} />
+        <Route path="/principal/verify/:id" element={<PrinVerifyDocument />} />
+        <Route path="/principal/reviewed" element={<PrinReviewedApps />} />
+        <Route path="/principal/certificates" element={<PrinReviewedApps />} />
+        <Route path="/principal/institution" element={<PrinReports />} />
+        <Route path="/principal/notifications" element={<PrinNotifications />} />
+        <Route path="/principal/reports" element={<PrinReports />} />
+        <Route path="/principal/help" element={<PrinHelpSupport />} />
       </Route>
 
       {/* Admin Portal App Route Container */}
       <Route element={
-        <ProtectedRoute allowedRoles={['admin']}>
+        <ProtectedRoute allowedSubRoles={['admin']}>
           <AdminProvider>
             <AdminLayout />
           </AdminProvider>
@@ -129,7 +149,7 @@ export default function App() {
 
       {/* Lab Portal App Route Container */}
       <Route element={
-        <ProtectedRoute allowedRoles={['lab-incharge']}>
+        <ProtectedRoute allowedSubRoles={['lab-incharge']}>
           <LabProvider>
             <LabLayout />
           </LabProvider>
@@ -138,6 +158,7 @@ export default function App() {
         <Route path="/lab/dashboard" element={<LabDashboard />} />
         <Route path="/lab/pending" element={<LabPending />} />
         <Route path="/lab/review/:id" element={<LabReview />} />
+        <Route path="/lab/verify/:id" element={<LabVerifyDocument />} />
         <Route path="/lab/reviewed" element={<LabReviewed />} />
         <Route path="/lab/equipment" element={<EquipmentTracker />} />
         <Route path="/lab/notifications" element={<LabNotifications />} />

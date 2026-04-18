@@ -4,21 +4,22 @@ import { useAuth } from '../../context/AuthContext';
 import { Link } from 'react-router';
 import { format } from 'date-fns';
 import { 
-  Search, Filter, ChevronDown, Check, Zap, X,
+  Search, Filter, ChevronDown, Zap, X,
   Clock, Award
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { DocumentQueue } from '../../components/DocumentQueue';
 
 export function PendingApps() {
-  const { pendingApps, approveApplication, flagApplication, batchAction } = useAuthority();
+  const { pendingApps, approveApplication, flagApplication } = useAuthority();
   const { currentUser } = useAuth();
-  const basePath = `/${currentUser?.role === 'principal' ? 'principal' : 'hod'}`;
+  // HOD portal always lives under /hod
+  const basePath = `/hod`;
   
   const [selected, setSelected] = useState<string[]>([]);
   const [search, setSearch] = useState('');
-  
-  // Modals mock state
   const [confirmModal, setConfirmModal] = useState<{type: 'approve' | 'flag', ids: string[]} | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const toggleSelect = (id: string) => {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -28,25 +29,41 @@ export function PendingApps() {
     else setSelected(filteredApps.map(a => a.id));
   };
 
-  const filteredApps = pendingApps.filter(a => 
-    a.studentName.toLowerCase().includes(search.toLowerCase()) || 
-    a.rollNo.toLowerCase().includes(search.toLowerCase())
+  const filteredApps = pendingApps.filter(a =>
+    (a.studentName || '').toLowerCase().includes(search.toLowerCase()) ||
+    (a.rollNo || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const executeBatch = () => {
+  const executeBatch = async () => {
     if(!confirmModal) return;
-    if(confirmModal.type === 'approve') batchAction(confirmModal.ids, 'Approve');
-    else batchAction(confirmModal.ids, 'Flag');
-    setSelected([]);
-    setConfirmModal(null);
+    setSubmitting(true);
+    try {
+      await Promise.all(confirmModal.ids.map(id =>
+        confirmModal.type === 'approve'
+          ? approveApplication(id, 'Batch approved by HOD')
+          : flagApplication(id, 'Batch flagged by HOD')
+      ));
+    } finally {
+      setSelected([]);
+      setConfirmModal(null);
+      setSubmitting(false);
+    }
   };
 
   return (
     <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 relative pb-32">
       
       <div>
-        <h1 className="font-black text-3xl md:text-5xl uppercase tracking-tight mb-2">Pending Applications</h1>
+        <h1 className="font-black text-3xl md:text-5xl uppercase tracking-tight mb-2">Pending Queue</h1>
         <p className="text-lg font-medium opacity-80">Review, flag, or approve student clearance requests.</p>
+      </div>
+
+      {/* ── Document Verification Queue ──────────────────────────────────── */}
+      <DocumentQueue stage="hod" portalPrefix="/hod" title="Document Verification Queue" />
+
+      {/* ── Application Queue ────────────────────────────────────────────── */}
+      <div className="border-t-4 border-[#121212] pt-8">
+        <h2 className="font-black text-xl uppercase tracking-tight mb-6">Application Clearance Queue</h2>
       </div>
 
       {/* Filter / Search Bar */}
@@ -92,6 +109,7 @@ export function PendingApps() {
            {/* Cards */}
            {filteredApps.map(app => {
              const isStale = app.daysWaiting >= 2;
+             const docCount = (app as any).documents?.length;
              return (
                <div key={app.id} className={`bg-white border-4 transition-all flex flex-col lg:flex-row items-start lg:items-center p-5 md:p-6 gap-6 ${
                  isStale ? 'border-[#D02020]' : 'border-[#121212]'
@@ -111,7 +129,9 @@ export function PendingApps() {
                       <span className="font-black text-2xl uppercase tracking-tight leading-none">{app.studentName}</span>
                       {isStale && <span className="px-2 py-0.5 bg-[#D02020] text-white text-[10px] font-bold uppercase tracking-widest flex items-center gap-1"><Clock className="w-3 h-3"/> Overdue</span>}
                    </div>
-                   <p className="font-bold text-xs uppercase tracking-widest opacity-60 mb-3">{app.rollNo} • {app.branch} '{app.batch.substring(2)} • {app.documents.length} Docs</p>
+                   <p className="font-bold text-xs uppercase tracking-widest opacity-60 mb-3">
+                     {app.rollNo} &bull; {app.branch}{app.batch ? ` '${app.batch.substring(2)}` : ''}{docCount ? ` \u2022 ${docCount} Docs` : ''}
+                   </p>
                    <p className="bg-[#E0E0E0] text-[#121212] px-2 py-1 w-max font-bold text-[10px] border border-[#121212] uppercase tracking-widest">
                       Submitted {format(new Date(app.submissionDate), 'MMM d')}
                    </p>
@@ -190,9 +210,9 @@ export function PendingApps() {
                    </p>
                    
                    <div className="flex gap-4">
-                     <button onClick={() => setConfirmModal(null)} className="flex-1 py-4 border-2 border-[#121212] font-black text-xs uppercase tracking-widest hover:bg-[#F0F0F0]">Cancel</button>
-                     <button onClick={executeBatch} className={`flex-1 py-4 border-2 border-[#121212] font-black text-xs uppercase tracking-widest text-white transition-all ${confirmModal.type === 'approve' ? 'bg-[#1040C0] shadow-[4px_4px_0px_0px_#121212] hover:-translate-y-1' : 'bg-[#D02020] shadow-[4px_4px_0px_0px_#121212] hover:-translate-y-1'}`}>
-                       Confirm
+                     <button onClick={() => setConfirmModal(null)} disabled={submitting} className="flex-1 py-4 border-2 border-[#121212] font-black text-xs uppercase tracking-widest hover:bg-[#F0F0F0] disabled:opacity-40">Cancel</button>
+                     <button onClick={executeBatch} disabled={submitting} className={`flex-1 py-4 border-2 border-[#121212] font-black text-xs uppercase tracking-widest text-white transition-all disabled:opacity-40 ${confirmModal.type === 'approve' ? 'bg-[#1040C0] shadow-[4px_4px_0px_0px_#121212] hover:-translate-y-1' : 'bg-[#D02020] shadow-[4px_4px_0px_0px_#121212] hover:-translate-y-1'}`}>
+                       {submitting ? 'Processing…' : 'Confirm'}
                      </button>
                    </div>
                 </div>

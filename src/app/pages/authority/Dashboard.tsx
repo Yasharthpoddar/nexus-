@@ -11,7 +11,7 @@ import { format } from 'date-fns';
 export function Dashboard() {
   const { profile, pendingApps, reviewedApps } = useAuthority();
   const { currentUser } = useAuth();
-  const basePath = `/${currentUser?.role === 'principal' ? 'principal' : 'hod'}`;
+  const basePath = `/hod`;
 
   const totalPending = pendingApps.length;
   // Let's pretend anything solved today checks the date. Since mock data generates right now we can just assume 5:
