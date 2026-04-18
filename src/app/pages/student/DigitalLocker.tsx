@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNexus } from '../../context/NexusContext';
+import { useAuth } from '../../context/AuthContext';
 import { 
   Download, 
   Award, 
@@ -7,16 +8,77 @@ import {
   FileCheck, 
   Receipt,
   X,
-  HardDrive
+  HardDrive,
+  Loader2
 } from 'lucide-react';
+
+interface CertRecord {
+  id: string;
+  certificate_id: string;
+  file_path: string;
+  issued_at: string;
+}
 
 export function DigitalLocker() {
   const { profile, documents, payments, departments } = useNexus();
+  const { currentUser } = useAuth();
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [showQR, setShowQR] = useState(false);
+  const [cert, setCert] = useState<CertRecord | null>(null);
+  const [downloadingCert, setDownloadingCert] = useState(false);
+  const [certError, setCertError] = useState('');
 
   const verifiedDocs = documents.filter(d => d.status === 'Verified');
   const allCleared = departments.every(d => d.status === 'Cleared');
+
+  // Fetch real certificate from backend
+  useEffect(() => {
+    if (!allCleared) return;
+    const token = localStorage.getItem('nexus_token');
+    fetch('/api/certificates/mine', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.certificates && data.certificates.length > 0) {
+          // Pick the most recent
+          setCert(data.certificates[0]);
+        }
+      })
+      .catch(() => {/* silent — cert may not exist yet */});
+  }, [allCleared]);
+
+  // Trigger real PDF download
+  const handleDownloadCert = async () => {
+    if (!cert) return;
+    setDownloadingCert(true);
+    setCertError('');
+    try {
+      const token = localStorage.getItem('nexus_token');
+      const response = await fetch(`/api/certificates/download/${cert.certificate_id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Download failed' }));
+        throw new Error(err.error || `HTTP ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `NoDuesCertificate-${cert.certificate_id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setCertError(e.message || 'Download failed');
+    } finally {
+      setDownloadingCert(false);
+    }
+  };
 
   const handleDownloadZip = () => {
     setDownloadingZip(true);
@@ -25,6 +87,9 @@ export function DigitalLocker() {
       alert('ZIP file downloaded successfully.');
     }, 2000);
   };
+
+  // Display cert number: real one from DB or fallback
+  const displayCertId = cert?.certificate_id ?? `NX-CERT-${new Date().getFullYear()}-????`;
 
   return (
     <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-10">
@@ -71,7 +136,7 @@ export function DigitalLocker() {
                <div>
                   <div className="flex justify-between items-start mb-2">
                     <span className="font-black text-[10px] uppercase tracking-widest text-[#F0C020] border border-[#F0C020] px-2 py-1 mb-2">Official Document</span>
-                    <span className="font-mono text-sm opacity-50 block md:hidden mb-2">CERT-NX-{new Date().getFullYear()}-8809</span>
+                    <span className="font-mono text-sm opacity-50 block md:hidden mb-2">{displayCertId}</span>
                   </div>
                   <h2 className="font-black text-2xl md:text-4xl uppercase tracking-tight text-white mb-4">No-Dues Certificate</h2>
                   
@@ -90,14 +155,31 @@ export function DigitalLocker() {
                     </div>
                     <div className="hidden md:block">
                       <p className="uppercase text-[10px] tracking-widest opacity-60 mb-1">Certificate #</p>
-                      <p className="font-bold font-mono">CERT-NX-{new Date().getFullYear()}-8809</p>
+                      <p className="font-bold font-mono">{displayCertId}</p>
                     </div>
                   </div>
+
+                  {certError && (
+                    <p className="text-[#FF4444] text-xs font-bold uppercase tracking-widest mb-3">
+                      ⚠ {certError}
+                    </p>
+                  )}
                </div>
 
                <div className="flex flex-wrap gap-4 pt-4 border-t border-white/20 mt-auto">
-                 <button onClick={() => alert('Downloading PDF...')} className="flex items-center gap-2 px-5 py-3 bg-[#F0C020] text-[#121212] font-black uppercase text-sm tracking-wider hover:bg-yellow-500 transition-colors">
-                   <Download className="w-4 h-4" /> Download PDF
+                 <button
+                   onClick={handleDownloadCert}
+                   disabled={downloadingCert || !cert}
+                   className={`flex items-center gap-2 px-5 py-3 font-black uppercase text-sm tracking-wider transition-colors ${
+                     downloadingCert || !cert
+                       ? 'bg-[#F0C020]/50 text-[#121212]/50 cursor-not-allowed'
+                       : 'bg-[#F0C020] text-[#121212] hover:bg-yellow-500'
+                   }`}
+                 >
+                   {downloadingCert
+                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Downloading…</>
+                     : <><Download className="w-4 h-4" /> Download PDF</>
+                   }
                  </button>
                  <button onClick={() => setShowQR(true)} className="flex items-center gap-2 px-5 py-3 bg-transparent border-2 border-white text-white font-black uppercase text-sm tracking-wider hover:bg-white hover:text-[#121212] transition-colors">
                    <QrCode className="w-4 h-4" /> View QR Code
@@ -156,7 +238,6 @@ export function DigitalLocker() {
              </div>
              <div className="p-8 pb-10 flex flex-col items-center">
                 <div className="w-48 h-48 border-4 border-[#121212] bg-white p-2 mb-6">
-                   {/* Dummy QR Layout */}
                    <div className="w-full h-full relative grid grid-cols-4 grid-rows-4 gap-1 p-2">
                      <div className="bg-[#121212] col-span-2 row-span-2 border-4 border-white p-1"><div className="w-full h-full bg-[#121212]" /></div>
                      <div className="bg-[#121212]"/> <div className="bg-white"/>
@@ -168,8 +249,9 @@ export function DigitalLocker() {
                    </div>
                 </div>
                 <h3 className="font-black uppercase text-xl tracking-tight mb-2 text-center">Scan to Verify</h3>
-                <p className="text-sm font-medium opacity-70 text-center leading-relaxed">
-                  Anyone can scan this code to authenticate your certificate directly via nexus-verify.college.edu
+                <p className="text-xs font-mono text-center opacity-60 break-all px-2">{displayCertId}</p>
+                <p className="text-sm font-medium opacity-70 text-center leading-relaxed mt-2">
+                  Anyone can scan this code to authenticate your certificate.
                 </p>
              </div>
           </div>
