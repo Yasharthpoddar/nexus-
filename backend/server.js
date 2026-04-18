@@ -10,6 +10,7 @@ const adminRoutes        = require('./routes/admin.routes');
 const documentsRoutes    = require('./routes/documents.routes');
 const applicationsRoutes = require('./routes/applications.routes');
 const certificatesRoutes = require('./routes/certificates.js');
+const duesRoutes         = require('./routes/dues.js');
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/documents',    documentsRoutes);
 app.use('/api/applications', applicationsRoutes);
 app.use('/api/certificates', certificatesRoutes);
+app.use('/api/dues', duesRoutes);
 
 // Healthcheck Route
 app.get('/api/health', (req, res) => {
