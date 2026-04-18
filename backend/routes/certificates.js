@@ -18,6 +18,51 @@ const { regenerateCertificateForUser } = require('../services/pdfGenerator');
 
 const router = express.Router();
 
+// ─── GET /api/certificates/pdf/:certificateId — PUBLIC, no auth ───────────────
+// This is the URL encoded in the QR code inside the PDF.
+// Anyone who scans the QR gets the PDF rendered inline in their browser/phone.
+router.get('/pdf/:certificateId', async (req, res) => {
+  try {
+    const { certificateId } = req.params;
+
+    const { data: cert, error } = await supabase
+      .from('certificates')
+      .select('*')
+      .eq('certificate_id', certificateId)
+      .single();
+
+    if (error || !cert) {
+      return res.status(404).send('Certificate not found.');
+    }
+
+    let filePath = cert.file_path;
+    if (!path.isAbsolute(filePath)) {
+      filePath = path.join(process.cwd(), filePath);
+    }
+
+    // Auto-regenerate if file missing
+    if (!fs.existsSync(filePath)) {
+      console.log(`[certificates/pdf] File missing, regenerating for cert ${certificateId}`);
+      try {
+        const result = await regenerateCertificateForUser(cert.user_id);
+        filePath = result.certPath;
+      } catch (genErr) {
+        return res.status(500).send('Certificate file unavailable.');
+      }
+    }
+
+    // Serve inline so phone browsers render the PDF directly
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${certificateId}.pdf"`);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.sendFile(path.resolve(filePath));
+  } catch (err) {
+    console.error('[certificates/pdf]', err);
+    res.status(500).send(err.message);
+  }
+});
+
 // All routes below require authentication
 router.use(requireAuth);
 
