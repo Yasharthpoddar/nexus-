@@ -35,12 +35,16 @@ export function AuthPage() {
   const [activeTab, setActiveTab] = useState<'signin' | 'register'>('signin');
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [successAnimation, setSuccessAnimation] = useState(false);
+  const [redirectingRole, setRedirectingRole] = useState('');
 
   // Triggered when any full authentication flow succeeds
-  const completeAuthentication = () => {
+  const completeAuthentication = (role: string) => {
+    setRedirectingRole(role);
     setSuccessAnimation(true);
     setTimeout(() => {
-      navigate('/dashboard');
+      if (role === 'student') navigate('/dashboard');
+      else if (role === 'authority') navigate('/authority/dashboard');
+      else if (role === 'admin') navigate('/admin/dashboard');
     }, 1500);
   };
 
@@ -64,7 +68,9 @@ export function AuthPage() {
                 <CheckCircle2 className="w-20 h-20 mb-6" />
               </motion.div>
               <h2 className="font-black text-2xl uppercase tracking-tight text-center">Authentication<br/>Successful</h2>
-              <p className="text-sm font-medium opacity-80 mt-2 text-center">Redirecting to your dashboard...</p>
+              <p className="text-sm font-medium opacity-80 mt-2 text-center">
+                {redirectingRole === 'authority' ? 'Redirecting to Authority Portal...' : redirectingRole === 'admin' ? 'Redirecting to Admin Panel...' : 'Redirecting to your dashboard...'}
+              </p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -129,35 +135,76 @@ export function AuthPage() {
 // --- Sign In Component ---
 
 function SignInView({ onForgot, onRegister, onComplete }: any) {
+  const [role, setRole] = useState<'student' | 'authority' | 'admin'>('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<any>({});
 
-  const isFormValid = email.includes('@college.edu') && password.length >= 8;
+  const domain = role === 'admin' ? '@nexus.edu' : '@college.edu';
+  const isFormValid = email.includes(domain) && password.length > 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) return;
-    onComplete();
+    
+    // Constraints removed for now, accept any password that meets the domain
+    onComplete(role);
   };
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setEmail(val);
-    if (val && !val.includes('@college.edu')) {
-      setErrors({ ...errors, email: 'Must use a valid @college.edu address' });
+    const requiredDomain = role === 'admin' ? '@nexus.edu' : '@college.edu';
+    if (val && !val.includes(requiredDomain)) {
+      setErrors({ ...errors, email: `Must use a valid ${requiredDomain} address` });
     } else {
       setErrors({ ...errors, email: null });
     }
   };
 
+  // Re-validate email if role changes
+  useEffect(() => {
+    if (email) {
+      const requiredDomain = role === 'admin' ? '@nexus.edu' : '@college.edu';
+      if (!email.includes(requiredDomain)) {
+        setErrors((prev: any) => ({ ...prev, email: `Must use a valid ${requiredDomain} address` }));
+      } else {
+        setErrors((prev: any) => ({ ...prev, email: null }));
+      }
+    }
+  }, [role, email]);
+
   return (
     <form onSubmit={handleSubmit} className="flex flex-col h-full">
+      <div className="flex border-4 border-[#121212] mb-6">
+        <button 
+          type="button" 
+          onClick={() => setRole('student')} 
+          className={`flex-1 py-2 font-black uppercase text-xs tracking-widest border-r-4 border-[#121212] transition-colors ${role === 'student' ? 'bg-[#121212] text-white' : 'bg-white text-[#121212] hover:bg-[#F0F0F0]'}`}
+        >
+          Student
+        </button>
+        <button 
+          type="button" 
+          onClick={() => setRole('authority')} 
+          className={`flex-1 py-2 font-black uppercase text-xs tracking-widest border-r-4 border-[#121212] transition-colors ${role === 'authority' ? 'bg-[#121212] text-white' : 'bg-white text-[#121212] hover:bg-[#F0F0F0]'}`}
+        >
+          Authority
+        </button>
+        <button 
+          type="button" 
+          onClick={() => setRole('admin')} 
+          className={`flex-1 py-2 font-black uppercase text-xs tracking-widest transition-colors ${role === 'admin' ? 'bg-[#121212] text-white' : 'bg-white text-[#121212] hover:bg-[#F0F0F0]'}`}
+        >
+          Admin
+        </button>
+      </div>
+
       <InputField 
-        label="College Email" 
+        label={role === 'admin' ? 'Admin Email' : role === 'authority' ? 'Authority Email' : 'College Email'}
         type="email"
-        placeholder="your.name@college.edu" 
+        placeholder={role === 'admin' ? 'admin@nexus.edu' : role === 'authority' ? 'prof.name@college.edu' : 'your.name@college.edu'} 
         value={email}
         onChange={handleEmailChange}
         error={errors.email}
@@ -168,9 +215,9 @@ function SignInView({ onForgot, onRegister, onComplete }: any) {
         <div className="relative">
           <input 
             type={showPassword ? "text" : "password"}
-            className="w-full p-3 bg-[#F9F9F9] border-2 border-[#121212] outline-none focus:bg-white focus:border-[#1040C0]"
+            className={`w-full p-3 bg-[#F9F9F9] border-2 outline-none focus:bg-white focus:border-[#1040C0] ${errors.credentials ? 'border-[#D02020]' : 'border-[#121212]'}`}
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => { setPassword(e.target.value); setErrors({ ...errors, credentials: null }); }}
           />
           <button 
             type="button"
@@ -181,6 +228,7 @@ function SignInView({ onForgot, onRegister, onComplete }: any) {
             {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
           </button>
         </div>
+        {errors.credentials && <p className="text-[#D02020] text-xs font-bold mt-1.5">{errors.credentials}</p>}
       </div>
 
       <div className="flex justify-between items-center mb-8">
@@ -210,7 +258,7 @@ function SignInView({ onForgot, onRegister, onComplete }: any) {
       </div>
 
       <div className="mt-8 pt-6 border-t font-medium text-xs text-center border-[#E0E0E0] opacity-50">
-        Authorities & Principal log in <a href="#" className="underline">separately</a>.
+        Select your role above then sign in.
       </div>
     </form>
   );
@@ -231,7 +279,7 @@ function ForgotPasswordView({ onBack, onComplete }: any) {
 
   const handleReset = (e: React.FormEvent) => {
     e.preventDefault();
-    if(otp.length === 6 && pwd.length >= 8) onComplete();
+    if(otp.length === 6 && pwd.length >= 8) onComplete('student');
   }
 
   return (
@@ -379,7 +427,8 @@ function RegisterView({ onComplete, onSignIn }: any) {
         </button>
 
         <button 
-          onClick={onComplete}
+          type="button"
+          onClick={() => onComplete('student')}
           disabled={!isComplete}
           className="w-full mt-8 py-4 bg-[#1040C0] text-white font-black uppercase tracking-widest border-2 border-[#121212] disabled:opacity-50 hover:shadow-[4px_4px_0px_#121212] transition-shadow"
         >
