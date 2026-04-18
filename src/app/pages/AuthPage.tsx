@@ -45,6 +45,7 @@ export function AuthPage() {
       if (role === 'student') navigate('/dashboard');
       else if (role === 'authority') navigate('/authority/dashboard');
       else if (role === 'admin') navigate('/admin/dashboard');
+      else if (role === 'lab-incharge') navigate('/lab/dashboard');
     }, 1500);
   };
 
@@ -135,7 +136,7 @@ export function AuthPage() {
 // --- Sign In Component ---
 
 function SignInView({ onForgot, onRegister, onComplete }: any) {
-  const [role, setRole] = useState<'student' | 'authority' | 'admin'>('student');
+  const [role, setRole] = useState<'student' | 'authority' | 'admin' | 'lab-incharge'>('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -177,34 +178,41 @@ function SignInView({ onForgot, onRegister, onComplete }: any) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col h-full">
-      <div className="flex border-4 border-[#121212] mb-6">
+      <div className="grid grid-cols-2 lg:flex border-4 border-[#121212] mb-6">
         <button 
           type="button" 
           onClick={() => setRole('student')} 
-          className={`flex-1 py-2 font-black uppercase text-xs tracking-widest border-r-4 border-[#121212] transition-colors ${role === 'student' ? 'bg-[#121212] text-white' : 'bg-white text-[#121212] hover:bg-[#F0F0F0]'}`}
+          className={`py-2 font-black uppercase text-[10px] sm:text-xs tracking-widest border-b-4 lg:border-b-0 border-r-4 lg:flex-1 border-[#121212] transition-colors ${role === 'student' ? 'bg-[#121212] text-white' : 'bg-white text-[#121212] hover:bg-[#F0F0F0]'}`}
         >
           Student
         </button>
         <button 
           type="button" 
           onClick={() => setRole('authority')} 
-          className={`flex-1 py-2 font-black uppercase text-xs tracking-widest border-r-4 border-[#121212] transition-colors ${role === 'authority' ? 'bg-[#121212] text-white' : 'bg-white text-[#121212] hover:bg-[#F0F0F0]'}`}
+          className={`py-2 font-black uppercase text-[10px] sm:text-xs tracking-widest border-b-4 lg:border-b-0 lg:border-r-4 lg:flex-1 border-[#121212] transition-colors ${role === 'authority' ? 'bg-[#121212] text-white' : 'bg-white text-[#121212] hover:bg-[#F0F0F0]'}`}
         >
           Authority
         </button>
         <button 
           type="button" 
+          onClick={() => setRole('lab-incharge')} 
+          className={`py-2 font-black uppercase text-[10px] sm:text-xs tracking-widest border-r-4 lg:flex-1 border-[#121212] transition-colors ${role === 'lab-incharge' ? 'bg-[#121212] text-white' : 'bg-white text-[#121212] hover:bg-[#F0F0F0]'}`}
+        >
+          Lab In-charge
+        </button>
+        <button 
+          type="button" 
           onClick={() => setRole('admin')} 
-          className={`flex-1 py-2 font-black uppercase text-xs tracking-widest transition-colors ${role === 'admin' ? 'bg-[#121212] text-white' : 'bg-white text-[#121212] hover:bg-[#F0F0F0]'}`}
+          className={`py-2 font-black uppercase text-[10px] sm:text-xs tracking-widest lg:flex-1 transition-colors ${role === 'admin' ? 'bg-[#121212] text-white' : 'bg-white text-[#121212] hover:bg-[#F0F0F0]'}`}
         >
           Admin
         </button>
       </div>
 
       <InputField 
-        label={role === 'admin' ? 'Admin Email' : role === 'authority' ? 'Authority Email' : 'College Email'}
+        label={role === 'admin' ? 'Admin Email' : role === 'authority' ? 'Authority Email' : role === 'lab-incharge' ? 'Lab Email' : 'College Email'}
         type="email"
-        placeholder={role === 'admin' ? 'admin@nexus.edu' : role === 'authority' ? 'prof.name@college.edu' : 'your.name@college.edu'} 
+        placeholder={role === 'admin' ? 'admin@nexus.edu' : role === 'authority' ? 'prof.name@college.edu' : role === 'lab-incharge' ? 'lab.mehta@college.edu' : 'your.name@college.edu'} 
         value={email}
         onChange={handleEmailChange}
         error={errors.email}
