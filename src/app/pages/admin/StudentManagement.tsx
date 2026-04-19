@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Link } from 'react-router';
 import { 
-  Search, ShieldOff, Download, UserX, X, Plus, ShieldCheck, AlertCircle
+  Search, ShieldOff, Download, UserX, X, Plus, ShieldCheck, AlertCircle, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export function StudentManagement() {
-  const { students, toggleStudentBlock, addStudent } = useAdmin();
+  const { students, toggleStudentBlock, addStudent, deleteStudent } = useAdmin();
   
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
@@ -215,10 +215,15 @@ export function StudentManagement() {
                          View
                        </Link>
                        <button 
-                         onClick={() => toggleStudentBlock(s.id)}
-                         className={`px-4 py-2 font-black uppercase tracking-widest text-[10px] transition-colors border-2 ${s.isBlocked ? 'border-[#121212] bg-[#121212] text-white' : 'border-[#D02020] text-[#D02020] hover:bg-[#D02020] hover:text-white'}`}
+                         onClick={() => {
+                           if (window.confirm(`Are you absolutely sure you want to permanently delete data for ${s.name}? This action cannot be undone.`)) {
+                             deleteStudent(s.id);
+                           }
+                         }}
+                         className="px-4 py-2 font-black uppercase tracking-widest text-[10px] bg-[#D02020] text-white border-2 border-[#D02020] hover:bg-black hover:border-black transition-colors flex items-center justify-center"
+                         title="Permanently Delete Student Data"
                        >
-                         {s.isBlocked ? 'Unblock' : 'Block'}
+                         <Trash2 className="w-3 h-3" />
                        </button>
                     </td>
                   </tr>

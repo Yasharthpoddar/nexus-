@@ -233,11 +233,48 @@ const forceIssueCert = async (req, res) => {
   } catch (err) { res.status(500).send('Error') }
 };
 
+const deleteStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Validate that caller is admin
+    const callerRole = req.user.sub_role || req.user.role;
+    if (callerRole !== 'admin') return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    // Supabase will CASCADE delete applications, payments, documents, and department_status automatically
+    const { error } = await supabase.from('users').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+
+    res.status(200).json({ success: true, message: 'Student deleted successfully from database.' });
+  } catch (err) {
+    console.error('Delete student error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const deleteAuthority = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const callerRole = req.user.sub_role || req.user.role;
+    if (callerRole !== 'admin') return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    const { error } = await supabase.from('users').delete().eq('id', id).neq('role', 'student');
+    if (error) throw new Error(error.message);
+
+    res.status(200).json({ success: true, message: 'Authority account removed.' });
+  } catch (err) {
+    console.error('Delete authority error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getAdminSync,
   uploadCsv,
   blockStudent,
   overrideDept,
   updateNotes,
-  forceIssueCert
+  forceIssueCert,
+  deleteStudent,
+  deleteAuthority
 };

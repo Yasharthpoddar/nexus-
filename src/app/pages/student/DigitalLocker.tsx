@@ -40,6 +40,8 @@ export function DigitalLocker() {
 
   // Fetch real locker data from backend
   useEffect(() => {
+    let pollingInterval: NodeJS.Timeout;
+
     const fetchLockerData = async () => {
       try {
         const token = localStorage.getItem('nexus_token');
@@ -48,30 +50,23 @@ export function DigitalLocker() {
 
         // API endpoints to fetch live files
         const [docsRes, paymentsRes, certRes] = await Promise.all([
-          fetch(`${base}/api/applications/dashboard`, { headers }), // To get docs since no docs/mine route
+          fetch(`${base}/api/documents/mine`, { headers }), // Fixed from /applications/dashboard
           fetch(`${base}/api/payment/mine`, { headers }),
           fetch(`${base}/api/certificates/mine`, { headers }),
         ]);
 
-        const [docsData, payments, certData] = await Promise.all([
-          docsRes.json(),
-          paymentsRes.json(),
-          certRes.json(),
+        const [docsData, paymentsData, certData] = await Promise.all([
+          docsRes.ok ? docsRes.json() : { documents: [] },
+          paymentsRes.ok ? paymentsRes.json() : [],
+          certRes.ok ? certRes.json() : { certificates: [] },
         ]);
         
-        let docs = docsData?.applications?.[0]?.documents || [];
+        let docs = docsData?.documents || [];
         docs = docs.filter((d: any) => d.status === 'Verified');
 
+        const payments = Array.isArray(paymentsData) ? paymentsData : [];
+
         let cert = certData?.certificates?.[0] || null;
-        
-        // Auto-generate certificate if all cleared but none exists yet
-        if (allCleared && !cert) {
-            const genRes = await fetch(`${base}/api/certificates/generate-mine`, { method: 'POST', headers });
-            if (genRes.ok) {
-               const genData = await genRes.json();
-               cert = { certificate_id: genData.certificateId, file_path: genData.certPath };
-            }
-        }
 
         setLockerData({
           documents: docs || [],
@@ -79,21 +74,59 @@ export function DigitalLocker() {
           certificate: cert,
           totalFiles: (docs?.length || 0) + (Array.isArray(payments) ? payments.length : 0) + (cert ? 1 : 0),
         });
+
+        // Poll every 10 seconds if approved but certificate hasn't rendered yet
+        if (allCleared && !cert) {
+           if (!pollingInterval) {
+             pollingInterval = setInterval(fetchLockerData, 10000);
+           }
+        } else {
+           if (pollingInterval) clearInterval(pollingInterval);
+        }
+
       } catch (err) {
         console.error('Locker fetch error', err);
       }
     };
+    
     fetchLockerData();
+    return () => { if (pollingInterval) clearInterval(pollingInterval); };
   }, [allCleared]);
 
   // Trigger real PDF download for single cert
   const handleDownloadCert = async () => {
-    if (!lockerData?.certificate) return;
     setDownloadingCert(true);
     setCertError('');
     try {
       const token = localStorage.getItem('nexus_token');
-      const response = await fetch(`/api/certificates/download/${lockerData.certificate.certificate_id}`, {
+      const base = import.meta.env.VITE_API_URL || '';
+
+      let targetCertId = lockerData?.certificate?.certificate_id;
+
+      // If certificate row doesn't exist yet (legacy apps), force generation!
+      if (!targetCertId) {
+        const genRes = await fetch(`${base}/api/certificates/generate-mine`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!genRes.ok) {
+          const err = await genRes.json().catch(() => ({ error: 'Auto-generation failed' }));
+          throw new Error(err.error || `HTTP ${genRes.status}`);
+        }
+        const genData = await genRes.json();
+        targetCertId = genData.certificateId;
+
+        // Instantly reflect the downloaded certificate in the UI
+        setLockerData(prev => prev ? {
+          ...prev,
+          certificate: { certificate_id: targetCertId },
+          totalFiles: prev.totalFiles + (prev.certificate ? 0 : 1)
+        } : null);
+      }
+
+      if (!targetCertId) throw new Error('Certificate generation failed.');
+
+      const response = await fetch(`${base}/api/certificates/download/${targetCertId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -106,7 +139,7 @@ export function DigitalLocker() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `NoDuesCertificate-${lockerData.certificate.certificate_id}.pdf`;
+      a.download = `NoDuesCertificate-${targetCertId}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -236,16 +269,16 @@ export function DigitalLocker() {
                <div className="flex flex-wrap gap-4 pt-4 border-t border-white/20 mt-auto">
                  <button
                    onClick={handleDownloadCert}
-                   disabled={downloadingCert || !cert}
+                   disabled={downloadingCert}
                    className={`flex items-center gap-2 px-5 py-3 font-black uppercase text-sm tracking-wider transition-colors ${
-                     downloadingCert || !cert
+                     downloadingCert
                        ? 'bg-[#F0C020]/50 text-[#121212]/50 cursor-not-allowed'
                        : 'bg-[#F0C020] text-[#121212] hover:bg-yellow-500'
                    }`}
                  >
                    {downloadingCert
-                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Downloading…</>
-                     : <><Download className="w-4 h-4" /> Download PDF</>
+                     ? <><Loader2 className="w-4 h-4 animate-spin" /> {cert ? 'Downloading…' : 'Generating…'}</>
+                     : <><Download className="w-4 h-4" /> {cert ? 'Download PDF' : 'Generate PDF'}</>
                    }
                  </button>
                  <button onClick={() => setShowQR(true)} className="flex items-center gap-2 px-5 py-3 bg-transparent border-2 border-white text-white font-black uppercase text-sm tracking-wider hover:bg-white hover:text-[#121212] transition-colors">
@@ -269,7 +302,27 @@ export function DigitalLocker() {
              <h3 className="font-black uppercase tracking-tight line-clamp-1 mb-1">{doc.name}</h3>
              <p className="font-bold text-xs uppercase tracking-widest opacity-60 mb-4">{doc.type}</p>
              
-             <button onClick={() => alert('Downloading ' + doc.name)} className="mt-auto w-full py-3 border-2 border-[#121212] font-bold text-xs uppercase tracking-widest hover:bg-[#F0F0F0] flex justify-center items-center gap-2">
+             <button 
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/documents/preview/${doc.id}`, {
+                      headers: { Authorization: `Bearer ${localStorage.getItem('nexus_token')}` }
+                    });
+                    if (!res.ok) throw new Error('Failed');
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = doc.name || `Vault_Doc_${doc.id}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  } catch (e) {
+                    alert('Could not download document.');
+                  }
+                }}
+                className="mt-auto w-full py-3 border-2 border-[#121212] font-bold text-xs uppercase tracking-widest hover:bg-[#F0F0F0] flex justify-center items-center gap-2">
                 <Download className="w-4 h-4" /> Save
              </button>
           </div>
@@ -294,7 +347,7 @@ export function DigitalLocker() {
                 onClick={async () => {
                   try {
                     const rno = payment.receipt_no || payment.receiptNo;
-                    const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/payments/receipt/${rno}`, {
+                    const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/payment/receipt/${rno}`, {
                       headers: { Authorization: `Bearer ${localStorage.getItem('nexus_token')}` }
                     });
                     if (!res.ok) throw new Error('Failed');

@@ -1,5 +1,6 @@
 const supabase = require('../db/config');
 const crypto = require('crypto');
+const { generateFullCertificatePackage } = require('../services/pdfGenerator');
 
 const getPrincipalSync = async (req, res) => {
   try {
@@ -80,29 +81,34 @@ const approveApp = async (req, res) => {
       .eq('application_id', appId)
       .eq('department', 'Principal');
 
-    const certificateHash = crypto.randomBytes(32).toString('hex');
+    // Fetch user constraint
+    const { data: appData } = await supabase.from('applications').select('user_id').eq('id', appId).single();
+    if (!appData) throw new Error("App not found");
+    
+    // Generate the full certificate package synchronously on approval!
+    const packageResult = await generateFullCertificatePackage(appData.user_id);
 
     await supabase.from('applications')
       .update({
         current_stage: 'completed',
         status: 'Approved',
         cert_status: 'Ready',
-        admin_notes: `Cert-Hash: ${certificateHash}`
+        admin_notes: `Cert: ${packageResult.certificateId}`
       })
       .eq('id', appId);
 
     await supabase.from('application_history').insert([{
       application_id: appId, actor: adminId, role: 'principal', action: 'approved',
-      comment: `Principal Approved. Cert: ${certificateHash.substring(0, 8)}...`
+      comment: `Principal Approved. Cert: ${packageResult.certificateId}`
     }]);
 
     await supabase.from('notifications').insert([{
       to_role: 'student', application_id: appId,
-      message: JSON.stringify({ type: 'approval', title: 'Graduation Approved', description: 'The Principal has approved your application. Your graduation certificate is ready to download.' }),
+      message: JSON.stringify({ type: 'approval', title: 'Graduation Approved', description: 'The Principal has approved your application. Your graduation certificate is automatically generated and available in your Digital Locker.' }),
       is_read: false
     }]);
 
-    res.status(200).json({ success: true, certificateHash });
+    res.status(200).json({ success: true, certificateId: packageResult.certificateId });
   } catch (err) {
     res.status(500).json({ message: 'Error mapping principal approval' });
   }

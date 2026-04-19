@@ -216,25 +216,20 @@ router.get('/zip', async (req, res) => {
     const rollNo = user?.roll_number || 'student';
     const timestamp = new Date().toISOString().slice(0, 10);
     
-    const { archivePath, fileCount, errors } = await bundleStudentRecords(req.user.id);
-    
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename=Nexus_DigitalLocker_${rollNo}_${timestamp}.zip`);
-    res.setHeader('X-File-Count', fileCount);
-    if (errors.length) {
-      res.setHeader('X-Missing-Files', errors.length);
-    }
     
-    const fs = require('fs');
-    const readStream = fs.createReadStream(archivePath);
-    readStream.on('close', () => {
-      // Cleanup temp zip
-      fs.unlink(archivePath, () => {});
-    });
-    readStream.pipe(res);
+    // Pass res to be piped directly!
+    const { fileCount, errors } = await bundleStudentRecords(req.user.id, res);
+    
+    // We cannot set X- headers reliably here since the stream is already writing,
+    // but the readme inside the ZIP covers any missing files anyway.
   } catch (err) {
     console.error('ZIP download error:', err);
-    res.status(500).json({ error: err.message });
+    // If headers haven't been sent, we can respond with error.
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 

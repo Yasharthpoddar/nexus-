@@ -146,9 +146,9 @@ export function MyApplication() {
 
                 {/* Y-axis label */}
                 <div className="flex flex-col justify-around shrink-0 self-stretch pt-8 pb-0 gap-0">
-                  {departments.map(dept => (
+                  {departments.map((dept, idx) => (
                     <div
-                      key={dept.id}
+                      key={`${dept.id}-${idx}`}
                       className="flex items-center justify-end pr-3 font-black text-[11px] uppercase tracking-widest"
                       style={{ height: '52px', color: '#121212', opacity: 0.75 }}
                     >
@@ -170,8 +170,8 @@ export function MyApplication() {
                   </div>
 
                   {/* Rows */}
-                  {departments.map(dept => (
-                    <div key={dept.id} className="flex mb-1 group relative">
+                  {departments.map((dept, idx) => (
+                    <div key={`${dept.id}-${idx}`} className="flex mb-1 group relative">
                       {METRICS.map((m, ci) => {
                         const val = seeded(dept, ci);
                         const bg  = cellColor(val);
@@ -275,8 +275,8 @@ export function MyApplication() {
               </tr>
             </thead>
             <tbody>
-              {departments.map((dept) => (
-                <React.Fragment key={dept.id}>
+              {departments.map((dept, idx) => (
+                <React.Fragment key={`${dept.id}-${idx}`}>
                   <tr 
                     className={`border-b-2 border-[#E0E0E0] hover:bg-[#F9F9F9] transition-colors cursor-pointer ${expandedRow === dept.id ? 'bg-[#F9F9F9]' : ''}`}
                     onClick={() => setExpandedRow(expandedRow === dept.id ? null : dept.id)}

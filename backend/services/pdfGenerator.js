@@ -235,7 +235,19 @@ async function regenerateCertificateForUser(userId) {
 
   if (userErr || !user) throw new Error(`User not found: ${userId}`);
 
-  // Check for existing cert record
+  // Fetch all applications to get the latest cleared application
+  const { data: apps } = await supabase
+    .from('applications')
+    .select('*')
+    .eq('user_id', userId)
+    .order('submitted_at', { ascending: false })
+    .limit(1);
+    
+  if (apps && apps.length > 0 && apps[0].status === 'Approved') {
+    return await generateFullCertificatePackage(userId);
+  }
+
+  // Fallback to legacy structure if not fully approved via pipeline
   const { data: existingCerts } = await supabase
     .from('certificates')
     .select('*')
@@ -281,6 +293,103 @@ async function regenerateCertificateForUser(userId) {
   }
 
   return { certificateId: certId, certPath, qrPath };
+}
+
+// ─── Generate Full Certificate Package (PDF + JSON Transcript) ──────────────
+async function generateFullCertificatePackage(studentId) {
+  // 1. Fetch Student from DB
+  const { data: student, error: studentErr } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', studentId)
+    .single();
+    
+  if (studentErr || !student) throw new Error('Student not found');
+
+  // 2. Fetch Latest application dates mapping
+  const { data: appData } = await supabase
+    .from('applications')
+    .select('*')
+    .eq('user_id', studentId)
+    .order('submitted_at', { ascending: false })
+    .limit(1);
+
+  const app = appData && appData.length > 0 ? appData[0] : null;
+
+  // 3. Assemble approval dates (mocked if not found in app payload)
+  const approvalDates = {
+    lab: app ? new Date(app.submitted_at).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN'),
+    hod: app ? new Date(app.submitted_at).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN'),
+    principal: new Date().toLocaleDateString('en-IN')
+  };
+
+  const studentData = {
+    name:         student.name,
+    rollNumber:   student.roll_number || '—',
+    programme:    student.programme   || 'B.Tech',
+    branch:       student.branch      || '—',
+    batch:        student.batch       || '—',
+    userId:       student.id,
+    principalName:    'Dr. Vandana Rao',
+    hodName:          'Prof. Anita Sharma',
+    labInchargeName:  'Dr. Rajesh Mehta',
+    approvalDates
+  };
+
+  // 4. Create paths
+  const certNumber = await generateCertificateId('NX-CERT');
+  const uploadDir = ensureCertDir();
+  
+  // 5. Build PDF using existing generator
+  const { qrBuffer, qrPath } = await generateQRCode(certNumber);
+  const { certPath } = await generateNoDuesCertificate(studentData, certNumber, qrBuffer);
+
+  // 6. Build Transcript JSON
+  const transcriptData = {
+    certificateNumber: certNumber,
+    issuedAt: new Date().toISOString(),
+    student: {
+      name: student.name,
+      roll_number: student.roll_number || '—',
+      department: student.branch || '—'
+    },
+    clearances: [
+      { department: 'Laboratory', status: 'Cleared', date: approvalDates.lab, by: studentData.labInchargeName },
+      { department: 'HOD', status: 'Cleared', date: approvalDates.hod, by: studentData.hodName },
+      { department: 'Principal', status: 'Approved', date: approvalDates.principal, by: studentData.principalName }
+    ]
+  };
+
+  const transcriptFileName = `ClearanceTranscript_${student.roll_number || studentId}.json`;
+  const transcriptPath = path.join(uploadDir, transcriptFileName);
+  fs.writeFileSync(transcriptPath, JSON.stringify(transcriptData, null, 2));
+
+  // 7. Insert or update DB. We map transcript to qr_code_path since we couldn't run schema migrations
+  const fileRelPath = `uploads/certificates/${certNumber}.pdf`;
+  const transcriptRelPath = `uploads/certificates/${transcriptFileName}`;
+  
+  // Check if exists
+  const { data: existing } = await supabase.from('certificates').select('id').eq('user_id', studentId);
+  if (existing && existing.length > 0) {
+    await supabase.from('certificates')
+      .update({ 
+        certificate_id: certNumber, 
+        file_path: fileRelPath, 
+        qr_code_path: transcriptRelPath,
+        issued_at: new Date().toISOString()
+      }).eq('user_id', studentId);
+  } else {
+    await supabase.from('certificates')
+      .insert({ 
+        user_id: studentId, 
+        certificate_id: certNumber, 
+        file_path: fileRelPath, 
+        qr_code_path: transcriptRelPath, 
+        issued_at: new Date().toISOString() 
+      });
+  }
+
+  return { certificateId: certNumber, certPath, transcriptPath, qrPath };
 }
 
 // ─── Legacy wrapper (used by old applications pipeline) ──────────────────────
@@ -366,6 +475,7 @@ module.exports = {
   generateNoDuesCertificate,
   generateDocumentCertificate,
   regenerateCertificateForUser,
+  generateFullCertificatePackage,
   generateQRCode,
   generateCertificateId,
   generatePaymentReceipt,

@@ -11,5 +11,7 @@ router.post('/students/block', adminController.blockStudent);
 router.post('/students/override', adminController.overrideDept);
 router.post('/students/notes', adminController.updateNotes);
 router.post('/certificates/issue', adminController.forceIssueCert);
+router.delete('/students/:id', adminController.deleteStudent);
+router.delete('/authorities/:id', adminController.deleteAuthority);
 
 module.exports = router;

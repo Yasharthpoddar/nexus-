@@ -102,7 +102,7 @@ export function Dashboard() {
                           <div className="text-[10px] font-mono opacity-60 mt-0.5">{s.rollNo}</div>
                         </td>
                         <td className="p-3 uppercase text-[10px] md:text-xs">
-                          {s.branch.slice(0,10)}.
+                          {s.branch ? `${s.branch.slice(0,10)}.` : '—'}
                         </td>
                         <td className="p-3">
                           <div className="flex items-center gap-2">

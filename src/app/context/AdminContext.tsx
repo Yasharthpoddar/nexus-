@@ -35,6 +35,8 @@ interface AdminState {
   addAuthority: (auth: any) => Promise<void>;
   addStudent: (stu: any) => Promise<void>;
   addCsvUpload: (fileData: any) => Promise<void>;
+  deleteStudent: (id: string) => Promise<void>;
+  deleteAuthority: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -150,11 +152,23 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     setCsvHistory(prev => [entry, ...prev]);
   };
 
+  const deleteStudent = async (id: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.delete(`/api/admin/students/${id}`, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
+  };
+
+  const deleteAuthority = async (id: string) => {
+    const token = localStorage.getItem('nexus_token');
+    await axios.delete(`/api/admin/authorities/${id}`, { headers: { Authorization: `Bearer ${token}` }});
+    fetchSyncData();
+  };
+
   return (
     <AdminContext.Provider value={{
       profile, students, authorities, settings, csvHistory, notifications, loading, refresh,
       toggleStudentBlock, overrideDepartmentStatus, updateAdminNotes, issueCertificate,
-      updateSettingsToggle, updatePipelineOrder, addAuthority, addStudent, addCsvUpload
+      updateSettingsToggle, updatePipelineOrder, addAuthority, addStudent, addCsvUpload, deleteStudent, deleteAuthority
     }}>
       {children}
     </AdminContext.Provider>

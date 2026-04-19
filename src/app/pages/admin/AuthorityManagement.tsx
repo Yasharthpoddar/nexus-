@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router';
 import { useAdmin } from '../../context/AdminContext';
 import { 
-  Plus, Send, Mail, CheckCircle2, ShieldCheck, X, AlertCircle
+  Plus, Send, Mail, CheckCircle2, ShieldCheck, X, AlertCircle, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -19,7 +19,7 @@ function Toast({ message, visible }: { message: string, visible: boolean }) {
 }
 
 export function AuthorityManagement() {
-  const { authorities, addAuthority } = useAdmin();
+  const { authorities, addAuthority, deleteAuthority } = useAdmin();
   const [modalOpen, setModalOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [showToast, setShowToast] = useState(false);
@@ -115,6 +115,17 @@ export function AuthorityManagement() {
                    <button onClick={() => triggerToast(`Nudge email sent to ${auth.name}`)} className="flex-1 text-center py-3 border-2 border-[#121212] font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-1 hover:bg-[#F0F0F0]">
                       <Send className="w-3 h-3" /> Nudge
                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Permanently remove authority account for ${auth.name}? This cannot be undone.`)) {
+                          deleteAuthority(auth.id);
+                        }
+                      }}
+                      className="px-4 py-3 bg-[#D02020] text-white border-2 border-[#D02020] hover:bg-black hover:border-black transition-colors flex items-center justify-center"
+                      title="Delete Authority Account"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                 </div>
              </div>
           ))}
