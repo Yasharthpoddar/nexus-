@@ -18,6 +18,7 @@ export type Department = {
   authority: string;
   status: DepartmentStatus;
   note: string;
+  lastUpdated: string;
 };
 
 export type Notification = {
@@ -132,7 +133,8 @@ export function NexusProvider({ children }: { children: ReactNode }) {
           name: d.department,
           authority: d.authority,
           status: d.status,
-          note: d.flag_reason || ''
+          note: d.flag_reason || '',
+          lastUpdated: d.last_updated || new Date().toISOString()
         }))
       );
 

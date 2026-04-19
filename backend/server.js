@@ -37,8 +37,13 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'Nexus Control Server is active.' });
 });
 
+const { initCronJobs } = require('./services/cronJobs');
+const { verifyEmailConnection } = require('./services/emailService');
+
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`[BOOT] System Initialize. Nexus Backend listening internally on port ${PORT}`);
+  await verifyEmailConnection();
+  initCronJobs();
 });

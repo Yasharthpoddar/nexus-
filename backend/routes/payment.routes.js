@@ -90,6 +90,7 @@ router.post('/verify', requireAuth, async (req, res) => {
     // 4. Create payment record and generate receipt
     const receiptNo = `RCPT-${Math.floor(1000 + Math.random() * 9000)}`;
     const { generatePaymentReceipt } = require('../services/pdfGenerator');
+    const { sendPaymentConfirmationEmail } = require('../services/emailService');
     
     let receiptPath = null;
     try {
@@ -116,7 +117,9 @@ router.post('/verify', requireAuth, async (req, res) => {
       .single();
 
     // 5. Notify student
-    const { data: apps } = await supabase.from('applications').select('id').eq('user_id', userId).limit(1);
+    const { data: apps } = await supabase.from('applications').select('id, users(email)').eq('user_id', userId).limit(1);
+    const userEmail = apps?.[0]?.users?.email || req.user.email;
+
     if (apps?.[0]) {
       await supabase.from('notifications').insert([{
         to_role:        'student',
@@ -128,6 +131,12 @@ router.post('/verify', requireAuth, async (req, res) => {
         }),
         is_read: false,
       }]);
+    }
+
+    // 6. Send Email Receipt
+    if (userEmail) {
+      // Don't await block to prevent failing the response if email fails
+      sendPaymentConfirmationEmail(userEmail, receiptNo, due.amount, due.department).catch(console.error);
     }
 
     res.json({ success: true, payment, receiptNo });

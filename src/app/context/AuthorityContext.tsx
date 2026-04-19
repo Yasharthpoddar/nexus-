@@ -98,12 +98,15 @@ export function AuthorityProvider({ children }: { children: React.ReactNode }) {
       const rawNotifs: any[] = resData.notifications || [];
       const mapped: AuthNotification[] = rawNotifs.map((n: any) => {
         let parsed: any = {};
-        try { parsed = typeof n.message === 'string' ? JSON.parse(n.message) : n.message; } catch { parsed = {}; }
+        try { 
+          parsed = typeof n.message === 'string' ? JSON.parse(n.message) : n.message; 
+          if (typeof parsed !== 'object' || parsed === null) parsed = {};
+        } catch { parsed = {}; }
         return {
           id: n.id,
-          type: parsed.type || 'system',
-          title: parsed.title || 'Notification',
-          description: parsed.description || (typeof n.message === 'string' ? n.message : ''),
+          type: parsed?.type || 'system',
+          title: parsed?.title || 'Notification',
+          description: parsed?.description || (typeof n.message === 'string' ? n.message : ''),
           timestamp: n.created_at || new Date().toISOString(),
           read: n.is_read || false,
         };

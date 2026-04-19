@@ -268,6 +268,20 @@ const deleteAuthority = async (req, res) => {
   }
 };
 
+const triggerNudge = async (req, res) => {
+  try {
+    const callerRole = req.user.sub_role || req.user.role;
+    if (callerRole !== 'admin') return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    const { processNudges } = require('../services/cronJobs');
+    await processNudges();
+    res.status(200).json({ success: true, message: 'Nudges triggered successfully' });
+  } catch (err) {
+    console.error('Manual nudge trigger error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getAdminSync,
   uploadCsv,
@@ -276,5 +290,6 @@ module.exports = {
   updateNotes,
   forceIssueCert,
   deleteStudent,
-  deleteAuthority
+  deleteAuthority,
+  triggerNudge
 };

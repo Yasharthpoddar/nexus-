@@ -15,14 +15,18 @@ import {
 import { format } from 'date-fns';
 
 export function Dashboard() {
-  const { profile, departments, notifications } = useNexus();
+  const { profile, departments, notifications, documents } = useNexus();
   const navigate = useNavigate();
   const [selectedDept, setSelectedDept] = useState<Department | null>(null);
 
-  const clearedCount = departments.filter(d => d.status === 'Cleared').length;
-  const totalCount = departments.length;
-  const allCleared = clearedCount === totalCount;
-  const progressPercent = Math.round((clearedCount / totalCount) * 100);
+  const isActiveApp = departments && departments.length > 0;
+  const clearedCount = isActiveApp ? departments.filter(d => d.status === 'Cleared').length : documents?.filter(d => d.status === 'Verified')?.length || 0;
+  const totalCount = isActiveApp ? departments.length : documents?.length || 0;
+  const unit = isActiveApp ? 'DEPARTMENTS CLEARED' : 'DOCUMENTS VERIFIED';
+  
+  // allCleared: only true when a real application exists AND every dept is cleared
+  const allCleared = isActiveApp && departments.length > 0 && departments.every(d => d.status === 'Cleared');
+  const progressPercent = totalCount > 0 ? Math.round((clearedCount / totalCount) * 100) : 0;
 
   const getStatusColor = (status: string) => {
     switch(status) {
@@ -138,7 +142,7 @@ export function Dashboard() {
       <div className="bg-white p-6 md:p-8 border-4 border-[#121212] shadow-[4px_4px_0px_0px_#121212]">
         <div className="flex items-center justify-between mb-4">
           <p className="font-black uppercase text-xl md:text-2xl tracking-tight">
-            {clearedCount} of {totalCount} departments cleared
+            {clearedCount} of {totalCount} {unit}
           </p>
           <span className="font-black text-3xl text-[#1040C0]">{progressPercent}%</span>
         </div>
@@ -161,9 +165,17 @@ export function Dashboard() {
               Current Status
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {departments.length === 0 && documents.length === 0 && (
+                <div className="col-span-1 md:col-span-2 border-4 border-[#121212] p-6 bg-gray-50 flex items-center justify-center min-h-[140px]">
+                   <p className="font-black uppercase tracking-widest text-[#121212] opacity-50">
+                     No active clearance or documents.
+                   </p>
+                </div>
+              )}
+
               {departments.map((dept) => (
                 <div 
-                  key={dept.id}
+                  key={`dept-${dept.id}`}
                   onClick={() => setSelectedDept(dept)}
                   className="bg-white border-2 border-[#121212] hover:border-4 hover:shadow-[4px_4px_0px_0px_#121212] transition-all cursor-pointer p-5 flex flex-col justify-between min-h-[140px]"
                 >
@@ -182,6 +194,31 @@ export function Dashboard() {
                         {dept.status}
                     </div>
                     <p className="text-sm font-medium line-clamp-1 opacity-80" title={dept.note}>{dept.note}</p>
+                  </div>
+                </div>
+              ))}
+
+              {documents.map((doc) => (
+                <div 
+                  key={`doc-${doc.id}`}
+                  className="bg-white border-2 border-[#121212] hover:border-4 hover:shadow-[4px_4px_0px_0px_#121212] transition-all p-5 flex flex-col justify-between min-h-[140px]"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="font-black text-xl uppercase tracking-tight">{doc.name}</h3>
+                      <p className="text-xs font-bold uppercase opacity-60 tracking-widest mt-1">Uploaded Document • {doc.type}</p>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <div className={`inline-flex items-center gap-2 px-2 py-0.5 border-2 border-[#121212] mb-2 font-bold text-[10px] uppercase tracking-wider ${
+                      doc.status === 'Verified' ? 'bg-[#1040C0] text-white' : 
+                      doc.status === 'Rejected' ? 'bg-[#D02020] text-white' : 
+                      'bg-[#F0C020] text-[#121212]'
+                    }`}>
+                        {doc.status}
+                    </div>
+                    <p className="text-sm font-medium line-clamp-1 opacity-80">Added on {doc.date}</p>
                   </div>
                 </div>
               ))}
@@ -211,9 +248,36 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Recent Activity */}
-        <div className="lg:col-span-1">
-          <div className="bg-white border-4 border-[#121212] h-full shadow-[4px_4px_0px_0px_#121212]">
+        {/* Recent Activity & Documents */}
+        <div className="lg:col-span-1 space-y-8">
+          {/* Documents Widget */}
+          {documents && documents.length > 0 && (
+            <div className="bg-white border-4 border-[#121212] shadow-[4px_4px_0px_0px_#121212]">
+              <div className="bg-[#121212] text-white p-5 border-b-4 border-[#121212] flex justify-between items-center">
+                <h2 className="font-black text-xl uppercase tracking-tight">Recent Docs</h2>
+                <span className="font-bold text-sm bg-white text-[#121212] px-2 py-0.5 rounded-full">{documents.length}</span>
+              </div>
+              <div className="p-4 space-y-3">
+                {documents.slice(0, 3).map((doc) => (
+                  <div key={doc.id} className="p-3 border-2 border-[#121212] bg-[#F0F0F0] flex justify-between items-center hover:-translate-y-1 transition-all">
+                    <div>
+                      <p className="font-black uppercase tracking-tight text-sm">{doc.name}</p>
+                      <p className="font-bold text-[10px] uppercase text-[#1040C0] tracking-widest">{doc.type}</p>
+                    </div>
+                    <span className="font-bold text-[10px] uppercase border border-[#121212] bg-white px-2 py-0.5">
+                      {doc.status}
+                    </span>
+                  </div>
+                ))}
+                <Link to="/documents" className="block text-center font-bold text-xs uppercase tracking-widest text-[#1040C0] hover:underline pt-2">
+                  View All Documents
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* Activity Widget */}
+          <div className="bg-white border-4 border-[#121212] shadow-[4px_4px_0px_0px_#121212]">
             <div className="bg-[#121212] text-white p-5 border-b-4 border-[#121212]">
               <h2 className="font-black text-xl uppercase tracking-tight">Recent Activity</h2>
             </div>
@@ -228,7 +292,7 @@ export function Dashboard() {
                     }`} />
                     <p className="font-bold text-xs text-gray-500 uppercase tracking-widest flex items-center gap-1 mb-1">
                       <Clock className="w-3 h-3" />
-                      {noti.time}
+                      {noti.time !== 'Invalid Date' ? noti.time : '—'}
                     </p>
                     <p className="font-bold text-md leading-tight mb-1 text-[#121212]">{noti.title}</p>
                     <p className="text-sm font-medium opacity-80">{noti.description}</p>

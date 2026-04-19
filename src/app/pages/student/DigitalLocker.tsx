@@ -36,7 +36,8 @@ export function DigitalLocker() {
   const [downloadingCert, setDownloadingCert] = useState(false);
   const [certError, setCertError] = useState('');
 
-  const allCleared = departments.every(d => d.status === 'Cleared');
+  // Certificate only unlocks when application is submitted AND every department has cleared
+  const allCleared = departments.length > 0 && departments.every(d => d.status === 'Cleared');
 
   // Fetch real locker data from backend
   useEffect(() => {
@@ -225,8 +226,8 @@ export function DigitalLocker() {
       {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
-        {/* Certificate (Only if cleared) */}
-        {allCleared && (
+        {/* Certificate — locked until all departments cleared */}
+        {allCleared ? (
           <div className="md:col-span-2 lg:col-span-3 bg-[#121212] text-white border-4 border-[#F0C020] p-1 flex flex-col md:flex-row shadow-[8px_8px_0px_0px_#F0C020]">
              <div className="bg-[#F0C020] text-[#121212] p-6 md:p-8 flex items-center justify-center border-b-2 md:border-b-0 md:border-r-4 border-[#121212]">
                <Award className="w-16 h-16 md:w-24 md:h-24" strokeWidth={1.5} />
@@ -286,6 +287,23 @@ export function DigitalLocker() {
                  </button>
                </div>
              </div>
+          </div>
+        ) : (
+          /* Locked certificate placeholder */
+          <div className="md:col-span-2 lg:col-span-3 bg-[#F0F0F0] border-4 border-[#121212] border-dashed p-8 flex flex-col md:flex-row items-center gap-6 opacity-60">
+            <div className="w-16 h-16 md:w-20 md:h-20 bg-[#E0E0E0] border-4 border-[#121212] rounded-full flex items-center justify-center shrink-0">
+              <Award className="w-8 h-8 md:w-10 md:h-10 text-[#888]" strokeWidth={1.5} />
+            </div>
+            <div>
+              <p className="font-black text-[10px] uppercase tracking-widest text-[#888] mb-2">Locked</p>
+              <h2 className="font-black text-xl md:text-2xl uppercase tracking-tight text-[#121212] mb-2">No-Dues Certificate</h2>
+              <p className="font-medium text-sm text-[#555]">
+                {departments.length === 0
+                  ? 'Submit your clearance application first. This certificate unlocks once all departments approve.'
+                  : `Pending clearance from ${departments.filter(d => d.status !== 'Cleared').length} department(s). Certificate unlocks when every department approves.`
+                }
+              </p>
+            </div>
           </div>
         )}
 

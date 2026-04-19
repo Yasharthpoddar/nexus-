@@ -1,0 +1,29 @@
+{
+  "certificateNumber": "NX-CERT-2026-F91A",
+  "issuedAt": "2026-04-19T01:52:34.540Z",
+  "student": {
+    "name": "Hritani Joshi",
+    "roll_number": "21CS088",
+    "department": "—"
+  },
+  "clearances": [
+    {
+      "department": "Laboratory",
+      "status": "Cleared",
+      "date": "18/4/2026",
+      "by": "Dr. Rajesh Mehta"
+    },
+    {
+      "department": "HOD",
+      "status": "Cleared",
+      "date": "18/4/2026",
+      "by": "Prof. Anita Sharma"
+    },
+    {
+      "department": "Principal",
+      "status": "Approved",
+      "date": "19/4/2026",
+      "by": "Dr. Vandana Rao"
+    }
+  ]
+}
