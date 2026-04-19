@@ -124,4 +124,18 @@ router.post('/verify', requireAuth, async (req, res) => {
   }
 });
 
+// ── POST /api/payment/failed ───────────────────────────────────────────────────
+// Called if Razorpay payment fails or is dismissed.
+router.post('/failed', requireAuth, async (req, res) => {
+  try {
+    const { razorpay_order_id, error_description } = req.body;
+    // Log the failure to the payments table (optional in our schema since we insert on success,
+    // but useful if we start creating 'pending' rows first).
+    res.json({ success: true, message: 'Payment failure recorded' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
+

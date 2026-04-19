@@ -114,7 +114,17 @@ export function Payments() {
       };
 
       const rzp = new (window as any).Razorpay(options);
-      rzp.on('payment.failed', (resp: any) => {
+      rzp.on('payment.failed', async (resp: any) => {
+        try {
+          await fetch(`${API_BASE}/api/payment/failed`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              razorpay_order_id: order.orderId,
+              error_description: resp.error?.description || 'Unknown error',
+            }),
+          });
+        } catch (e) {} // silent failed log
         setErrorMsg(`Payment failed: ${resp.error?.description || 'Unknown error'}`);
         setProcessing(false);
       });

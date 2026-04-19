@@ -47,7 +47,11 @@ export function CsvUpload() {
     } catch { /* silent */ }
   }, []);
 
-  useEffect(() => { fetchFlaggedStudents(); }, [fetchFlaggedStudents]);
+  useEffect(() => {
+    fetchFlaggedStudents();
+    const interval = setInterval(fetchFlaggedStudents, 30000);
+    return () => clearInterval(interval);
+  }, [fetchFlaggedStudents]);
 
   // ── File validation ──────────────────────────────────────────────────────────
   const handleFileSelect = (f: File) => {
