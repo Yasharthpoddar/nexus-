@@ -11,6 +11,7 @@ const documentsRoutes    = require('./routes/documents.routes');
 const applicationsRoutes = require('./routes/applications.routes');
 const certificatesRoutes = require('./routes/certificates.js');
 const duesRoutes         = require('./routes/dues.js');
+const paymentRoutes      = require('./routes/payment.routes.js');
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use('/api/documents',    documentsRoutes);
 app.use('/api/applications', applicationsRoutes);
 app.use('/api/certificates', certificatesRoutes);
 app.use('/api/dues', duesRoutes);
+app.use('/api/payment', paymentRoutes);
 
 // Healthcheck Route
 app.get('/api/health', (req, res) => {
