@@ -20,42 +20,80 @@ interface CertRecord {
 }
 
 export function DigitalLocker() {
-  const { profile, documents, payments, departments } = useNexus();
+  const { profile, departments } = useNexus();
   const { currentUser } = useAuth();
+  
+  const [lockerData, setLockerData] = useState<{
+    documents: any[];
+    payments: any[];
+    certificate: any | null;
+    totalFiles: number;
+  } | null>(null);
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  
   const [showQR, setShowQR] = useState(false);
-  const [cert, setCert] = useState<CertRecord | null>(null);
   const [downloadingCert, setDownloadingCert] = useState(false);
   const [certError, setCertError] = useState('');
 
-  const verifiedDocs = documents.filter(d => d.status === 'Verified');
   const allCleared = departments.every(d => d.status === 'Cleared');
 
-  // Fetch real certificate from backend
+  // Fetch real locker data from backend
   useEffect(() => {
-    if (!allCleared) return;
-    const token = localStorage.getItem('nexus_token');
-    fetch('/api/certificates/mine', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.certificates && data.certificates.length > 0) {
-          // Pick the most recent
-          setCert(data.certificates[0]);
+    const fetchLockerData = async () => {
+      try {
+        const token = localStorage.getItem('nexus_token');
+        const headers = { Authorization: `Bearer ${token}` };
+        const base = import.meta.env.VITE_API_URL || '';
+
+        // API endpoints to fetch live files
+        const [docsRes, paymentsRes, certRes] = await Promise.all([
+          fetch(`${base}/api/applications/dashboard`, { headers }), // To get docs since no docs/mine route
+          fetch(`${base}/api/payment/mine`, { headers }),
+          fetch(`${base}/api/certificates/mine`, { headers }),
+        ]);
+
+        const [docsData, payments, certData] = await Promise.all([
+          docsRes.json(),
+          paymentsRes.json(),
+          certRes.json(),
+        ]);
+        
+        let docs = docsData?.applications?.[0]?.documents || [];
+        docs = docs.filter((d: any) => d.status === 'Verified');
+
+        let cert = certData?.certificates?.[0] || null;
+        
+        // Auto-generate certificate if all cleared but none exists yet
+        if (allCleared && !cert) {
+            const genRes = await fetch(`${base}/api/certificates/generate-mine`, { method: 'POST', headers });
+            if (genRes.ok) {
+               const genData = await genRes.json();
+               cert = { certificate_id: genData.certificateId, file_path: genData.certPath };
+            }
         }
-      })
-      .catch(() => {/* silent — cert may not exist yet */});
+
+        setLockerData({
+          documents: docs || [],
+          payments: Array.isArray(payments) ? payments : [],
+          certificate: cert,
+          totalFiles: (docs?.length || 0) + (Array.isArray(payments) ? payments.length : 0) + (cert ? 1 : 0),
+        });
+      } catch (err) {
+        console.error('Locker fetch error', err);
+      }
+    };
+    fetchLockerData();
   }, [allCleared]);
 
-  // Trigger real PDF download
+  // Trigger real PDF download for single cert
   const handleDownloadCert = async () => {
-    if (!cert) return;
+    if (!lockerData?.certificate) return;
     setDownloadingCert(true);
     setCertError('');
     try {
       const token = localStorage.getItem('nexus_token');
-      const response = await fetch(`/api/certificates/download/${cert.certificate_id}`, {
+      const response = await fetch(`/api/certificates/download/${lockerData.certificate.certificate_id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -68,7 +106,7 @@ export function DigitalLocker() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `NoDuesCertificate-${cert.certificate_id}.pdf`;
+      a.download = `NoDuesCertificate-${lockerData.certificate.certificate_id}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -80,16 +118,42 @@ export function DigitalLocker() {
     }
   };
 
-  const handleDownloadZip = () => {
+  const handleDownloadZip = async () => {
     setDownloadingZip(true);
-    setTimeout(() => {
+    setDownloadError(null);
+    try {
+      const token = localStorage.getItem('nexus_token');
+      const base = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${base}/api/certificates/zip`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Failed to generate ZIP');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Nexus_DigitalLocker_${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setDownloadError('Could not download locker. Please try again.');
+    } finally {
       setDownloadingZip(false);
-      alert('ZIP file downloaded successfully.');
-    }, 2000);
+    }
   };
 
-  // Display cert number: real one from DB or fallback
-  const displayCertId = cert?.certificate_id ?? `NX-CERT-${new Date().getFullYear()}-????`;
+  // Extract from lockerData state instead of legacy context
+  const cert = lockerData?.certificate;
+  const verifiedDocs = lockerData?.documents || [];
+  const paymentsList = lockerData?.payments || [];
+  
+  const displayCertId = cert?.certificate_id ?? `NX-CERT-${new Date().getFullYear()}-PENDING`;
+
+  const usedMB = lockerData
+    ? ((lockerData.documents.length * 0.8) + (lockerData.payments.length * 0.3) + (lockerData.certificate ? 1.2 : 0)).toFixed(1)
+    : '0';
 
   return (
     <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-10">
@@ -100,16 +164,19 @@ export function DigitalLocker() {
            <p className="text-lg font-medium opacity-80">Your permanent, verifiable record of graduation readiness.</p>
         </div>
         
-        <button 
-          onClick={handleDownloadZip}
-          disabled={downloadingZip}
-          className={`shrink-0 px-6 py-4 border-4 border-[#121212] font-black uppercase text-sm tracking-wider flex items-center justify-center gap-3 transition-all ${
-            downloadingZip ? 'bg-[#E0E0E0] opacity-50 cursor-not-allowed' : 'bg-[#121212] text-white hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#1040C0]'
-          }`}
-        >
-          <Download className={`w-5 h-5 ${downloadingZip ? 'animate-bounce' : ''}`} />
-          {downloadingZip ? 'Preparing ZIP...' : 'Download All as ZIP'}
-        </button>
+        <div className="flex flex-col items-end gap-2">
+            <button 
+              onClick={handleDownloadZip}
+              disabled={downloadingZip || !lockerData?.totalFiles}
+              className={`shrink-0 px-6 py-4 border-4 border-[#121212] font-black uppercase text-sm tracking-wider flex items-center justify-center gap-3 transition-all ${
+                (downloadingZip || !lockerData?.totalFiles) ? 'bg-[#E0E0E0] opacity-50 cursor-not-allowed' : 'bg-[#121212] text-white hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#1040C0]'
+              }`}
+            >
+              <Download className={`w-5 h-5 ${downloadingZip ? 'animate-bounce' : ''}`} />
+              {downloadingZip ? 'Preparing ZIP...' : 'Download All as ZIP'}
+            </button>
+            {downloadError && <p className="text-[#D02020] text-xs font-bold">{downloadError}</p>}
+        </div>
       </div>
 
       {/* Storage usage */}
@@ -117,9 +184,9 @@ export function DigitalLocker() {
          <HardDrive className="w-5 h-5 opacity-50" />
          <span className="opacity-80">Locker Usage</span>
          <div className="flex-1 h-3 bg-[#F0F0F0] border-2 border-[#121212] ml-2">
-           <div className="h-full bg-[#1040C0] w-[15%]" />
+           <div className="h-full bg-[#1040C0]" style={{ width: `${Math.min(100, Math.max(2, (parseFloat(usedMB) / 50) * 100))}%` }} />
          </div>
-         <span>7.5 MB / 50 MB</span>
+         <span>{usedMB} MB / 50 MB</span>
       </div>
 
       {/* Grid */}
@@ -209,23 +276,45 @@ export function DigitalLocker() {
         ))}
 
         {/* Payments Receipts */}
-        {payments.map(payment => (
+        {paymentsList.map(payment => {
+          const dateStr = payment.paid_at ? new Date(payment.paid_at).toLocaleDateString() : (payment.date?.split(',')[0] || 'Unknown Date');
+          return (
           <div key={payment.id} className="bg-white border-4 border-[#121212] p-5 flex flex-col hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#121212] transition-all">
              <div className="border-b-4 border-[#121212] pb-4 mb-4 flex justify-between items-start">
                <div className="p-3 bg-[#F0F0F0] border-2 border-[#121212]">
                  <Receipt className="w-6 h-6 text-[#121212]" />
                </div>
-               <span className="font-mono text-[10px] font-bold bg-[#E0E0E0] px-2 py-1 border border-[#121212] opacity-70 uppercase block text-right mt-1 w-20 overflow-hidden text-ellipsis">{payment.receiptNo}</span>
+               <span className="font-mono text-[10px] font-bold bg-[#E0E0E0] px-2 py-1 border border-[#121212] opacity-70 uppercase block text-right mt-1 w-20 overflow-hidden text-ellipsis">{payment.receipt_no || payment.receiptNo || payment.transaction_id}</span>
              </div>
              
              <h3 className="font-black uppercase tracking-tight line-clamp-1 mb-1">{payment.department} Receipt</h3>
-             <p className="font-bold text-xs uppercase tracking-widest opacity-60 mb-4">Paid ₹{payment.amount} • {payment.date.split(',')[0]}</p>
+             <p className="font-bold text-xs uppercase tracking-widest opacity-60 mb-4">Paid ₹{payment.amount} • {dateStr}</p>
              
-             <button onClick={() => alert('Downloading ' + payment.receiptNo)} className="mt-auto w-full py-3 border-2 border-[#121212] font-bold text-xs uppercase tracking-widest hover:bg-[#F0F0F0] flex justify-center items-center gap-2">
+             <button 
+                onClick={async () => {
+                  try {
+                    const rno = payment.receipt_no || payment.receiptNo;
+                    const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/payments/receipt/${rno}`, {
+                      headers: { Authorization: `Bearer ${localStorage.getItem('nexus_token')}` }
+                    });
+                    if (!res.ok) throw new Error('Failed');
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Receipt-${rno}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  } catch (e) {
+                    alert('Could not download receipt.');
+                  }
+                }} 
+                className="mt-auto w-full py-3 border-2 border-[#121212] font-bold text-xs uppercase tracking-widest hover:bg-[#F0F0F0] flex justify-center items-center gap-2">
                 <Download className="w-4 h-4" /> Save
              </button>
           </div>
-        ))}
+        )})}
       </div>
 
       {allCleared && showQR && (

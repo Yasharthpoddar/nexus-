@@ -206,4 +206,48 @@ router.post('/admin/regenerate-by-cert/:certificateId', async (req, res) => {
   }
 });
 
+// ─── GET /api/certificates/zip — Download Digital Locker Archive ─────────────
+router.get('/zip', async (req, res) => {
+  try {
+    const { bundleStudentRecords } = require('../services/zipExporter');
+    
+    // Check user data for filename
+    const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
+    const rollNo = user?.roll_number || 'student';
+    const timestamp = new Date().toISOString().slice(0, 10);
+    
+    const { archivePath, fileCount, errors } = await bundleStudentRecords(req.user.id);
+    
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename=Nexus_DigitalLocker_${rollNo}_${timestamp}.zip`);
+    res.setHeader('X-File-Count', fileCount);
+    if (errors.length) {
+      res.setHeader('X-Missing-Files', errors.length);
+    }
+    
+    const fs = require('fs');
+    const readStream = fs.createReadStream(archivePath);
+    readStream.on('close', () => {
+      // Cleanup temp zip
+      fs.unlink(archivePath, () => {});
+    });
+    readStream.pipe(res);
+  } catch (err) {
+    console.error('ZIP download error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/certificates/generate-mine — auto-creation for Locker ─────────
+router.post('/generate-mine', async (req, res) => {
+  try {
+    const { regenerateCertificateForUser } = require('../services/pdfGenerator');
+    const result = await regenerateCertificateForUser(req.user.id);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[certificates/generate-mine]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

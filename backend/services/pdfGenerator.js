@@ -292,6 +292,75 @@ async function generateCertificate(applicationId, studentData, deptStatus) {
   return { certificateId: certId, path: certPath };
 }
 
+// ─── Generate Payment Receipt PDF ──────────────────────────────────────────────
+async function generatePaymentReceipt(paymentData, studentData) {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595, 420]);
+  const { width, height } = page.getSize();
+
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const black = rgb(0.07, 0.07, 0.07);
+  const yellow = rgb(0.94, 0.75, 0.13);
+  const gray = rgb(0.53, 0.53, 0.53);
+  const white = rgb(1, 1, 1);
+
+  // Header bar
+  page.drawRectangle({ x: 0, y: height - 60, width, height: 60, color: black });
+  page.drawText('NEXUS', { x: 40, y: height - 28, size: 22, font: fontBold, color: white });
+  page.drawText('PAYMENT RECEIPT', { x: 40, y: height - 46, size: 9, font: fontRegular, color: rgb(0.7, 0.7, 0.7) });
+  page.drawText(paymentData.receiptNo || 'RECEIPT', { x: width - 180, y: height - 35, size: 11, font: fontBold, color: yellow });
+
+  // Yellow accent line
+  page.drawRectangle({ x: 0, y: height - 63, width, height: 3, color: yellow });
+
+  // Student info
+  page.drawText('PAID TO', { x: 40, y: height - 95, size: 8, font: fontBold, color: gray });
+  page.drawText('NEXUS CLEARANCE SYSTEM', { x: 40, y: height - 112, size: 11, font: fontBold, color: black });
+  page.drawText('PAID BY', { x: 300, y: height - 95, size: 8, font: fontBold, color: gray });
+  page.drawText(studentData.name || 'STUDENT', { x: 300, y: height - 112, size: 11, font: fontBold, color: black });
+  page.drawText(`Roll No: ${studentData.rollNumber || studentData.roll_number || '—'}`, { x: 300, y: height - 128, size: 9, font: fontRegular, color: gray });
+
+  // Divider
+  page.drawLine({ start: { x: 40, y: height - 145 }, end: { x: width - 40, y: height - 145 }, thickness: 1, color: rgb(0.88, 0.88, 0.88) });
+
+  // Payment details table
+  const rows = [
+    ['Department', paymentData.department || 'General'],
+    ['Amount Paid', `INR ${(parseFloat(paymentData.amount) || 0).toFixed(2)}`],
+    ['Payment ID', paymentData.paymentId || '—'],
+    ['Transaction Date', new Date(paymentData.paidAt || Date.now()).toLocaleString('en-IN')],
+    ['Payment Status', 'SUCCESS'],
+    ['Reason', paymentData.reason || 'Dues clearance'],
+  ];
+
+  rows.forEach(([label, value], i) => {
+    const y = height - 175 - (i * 28);
+    page.drawRectangle({ x: 40, y: y - 8, width: width - 80, height: 26, color: i % 2 === 0 ? rgb(0.98, 0.98, 0.98) : white });
+    page.drawText(label, { x: 50, y, size: 9, font: fontBold, color: gray });
+    page.drawText(String(value), { x: 250, y, size: 10, font: fontBold, color: black });
+  });
+
+  // PAID stamp
+  page.drawRectangle({ x: width - 130, y: height - 270, width: 90, height: 34, color: black });
+  page.drawText('PAID', { x: width - 113, y: height - 248, size: 18, font: fontBold, color: yellow });
+
+  // Footer
+  page.drawRectangle({ x: 0, y: 0, width, height: 40, color: black });
+  page.drawRectangle({ x: 0, y: 40, width, height: 2, color: yellow });
+  page.drawText('This is a system-generated receipt and does not require a physical signature.', {
+    x: width / 2 - 180, y: 15, size: 8, font: fontRegular, color: white
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  const receiptDir = path.join(process.cwd(), 'uploads', 'receipts');
+  fs.mkdirSync(receiptDir, { recursive: true });
+  const receiptPath = Math.random() > -1 ? path.join(receiptDir, `receipt-${paymentData.receiptNo}.pdf`) : 'fallback';
+  fs.writeFileSync(receiptPath, pdfBytes);
+  // Store the relative path format uniformly
+  return `uploads/receipts/receipt-${paymentData.receiptNo}.pdf`;
+}
+
 module.exports = {
   generateCertificate,
   generateNoDuesCertificate,
@@ -299,4 +368,5 @@ module.exports = {
   regenerateCertificateForUser,
   generateQRCode,
   generateCertificateId,
+  generatePaymentReceipt,
 };
