@@ -128,9 +128,15 @@ export function StudentManagement() {
         
         if (totalCreated > 0) {
           triggerToast(`Upload Successful! Added/Updated ${totalCreated} students.`);
-          if (totalFailed > 0) triggerToast(`${totalFailed} records were skipped/errored. See console.`);
+          if (totalFailed > 0) {
+            triggerToast(`${totalFailed} records were skipped/errored. See console.`);
+            const firstError = result.results?.errors?.[0]?.errors?.[0]?.error;
+            if (firstError) alert(`Note: Some records failed. Example error: ${firstError}`);
+          }
         } else {
-          triggerToast(`Upload finished: 0 new students added. They might all already exist.`);
+          const firstError = result.results?.errors?.[0]?.errors?.[0]?.error;
+          triggerToast(`Upload finished: 0 new students added.`);
+          if (firstError) alert(`Critical Error: ${firstError}`);
         }
       } catch (err: any) {
         console.error("Bulk upload fatal error:", err);
