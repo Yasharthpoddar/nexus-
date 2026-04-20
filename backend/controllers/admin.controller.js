@@ -260,38 +260,61 @@ const bulkRegisterStudents = async (req, res) => {
     }
 
     const results = { created: 0, failed: 0, errors: [] };
+    const BATCH_SIZE = 100;
 
-    for (const s of students) {
+    for (let i = 0; i < students.length; i += BATCH_SIZE) {
+      const batch = students.slice(i, i + BATCH_SIZE);
+      
       try {
-        const hashedPassword = await bcrypt.hash(s.rollNo, 10);
-        
-        // 1. Create User
-        const { data: newUser, error: uErr } = await supabase.from('users').insert([{
-          name: s.name,
-          email: s.email,
-          password: hashedPassword,
-          role: 'student',
-          sub_role: 'student',
-          branch: s.branch,
-          batch: s.batch,
-          roll_number: s.rollNo,
-          is_blocked: false
-        }]).select('id').single();
+        // 1. Hash passwords for the batch
+        const studentData = await Promise.all(batch.map(async (s) => {
+          const hashedPassword = await bcrypt.hash(s.rollNo, 10);
+          return {
+            name: s.name,
+            email: s.email,
+            password: hashedPassword,
+            role: 'student',
+            sub_role: 'student',
+            branch: s.branch,
+            batch: s.batch,
+            roll_number: s.rollNo,
+            is_blocked: false
+          };
+        }));
 
-        if (uErr) throw new Error(uErr.message);
+        // 2. Bulk Insert Users
+        const { data: newUsers, error: uErr } = await supabase
+          .from('users')
+          .insert(studentData)
+          .select('id');
 
-        // 2. Create Application
-        await supabase.from('applications').insert([{
-          user_id: newUser.id,
+        if (uErr) {
+          // If bulk fails, log and continue to next batch (or handle individual errors)
+          results.failed += batch.length;
+          results.errors.push({ batch: `${i}-${i+BATCH_SIZE}`, error: uErr.message });
+          continue;
+        }
+
+        // 3. Bulk Insert Applications for this batch
+        const applicationData = newUsers.map(u => ({
+          user_id: u.id,
           status: 'submitted',
           current_stage: 'library',
           cert_status: 'Not Ready'
-        }]);
+        }));
 
-        results.created++;
+        const { error: aErr } = await supabase
+          .from('applications')
+          .insert(applicationData);
+
+        if (aErr) {
+          results.errors.push({ batch: `${i}-${i+BATCH_SIZE}`, error: `Applications failed: ${aErr.message}` });
+        }
+
+        results.created += newUsers.length;
       } catch (err) {
-        results.failed++;
-        results.errors.push({ email: s.email, error: err.message });
+        results.failed += batch.length;
+        results.errors.push({ batch: `${i}-${i+BATCH_SIZE}`, error: err.message });
       }
     }
 
