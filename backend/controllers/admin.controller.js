@@ -1,5 +1,6 @@
 const supabase = require('../db/config');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
 // Simulated CSV Memory Store
 let mockCsvHistory = [
