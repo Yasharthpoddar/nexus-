@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Link } from 'react-router';
 import { 
-  Search, ShieldOff, Download, UserX, X, Plus, ShieldCheck, AlertCircle, Trash2
+  Search, ShieldOff, Download, UserX, X, Plus, ShieldCheck, AlertCircle, Trash2, FileUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export function StudentManagement() {
-  const { students, toggleStudentBlock, addStudent, deleteStudent } = useAdmin();
+  const { students, toggleStudentBlock, addStudent, deleteStudent, bulkAddStudents } = useAdmin();
   
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -54,6 +55,54 @@ export function StudentManagement() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+      
+      // Skip header
+      if (lines.length < 2) {
+        triggerToast('CSV file is empty or missing data.');
+        return;
+      }
+
+      const parsedStudents = lines.slice(1).map(line => {
+        // Handle CSV with quotes or simple commas
+        const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        if (cols.length < 5) return null;
+
+        return {
+          email: cols[1],
+          name: cols[2],
+          rollNo: cols[3],
+          branch: cols[4],
+          batch: cols[5] || '2025'
+        };
+      }).filter(Boolean);
+
+      if (parsedStudents.length === 0) {
+        triggerToast('No valid student records found in CSV.');
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const result = await bulkAddStudents(parsedStudents);
+        triggerToast(`Bulk upload complete! Created ${result.results.created} students.`);
+      } catch (err: any) {
+        triggerToast('Bulk upload failed. Check CSV format.');
+      } finally {
+        setSubmitting(false);
+        if(fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
   };
 
   // Filtering
@@ -108,9 +157,25 @@ export function StudentManagement() {
           <h1 className="font-black text-3xl md:text-5xl uppercase tracking-tighter mb-2">Student Management</h1>
           <p className="font-bold opacity-50 uppercase tracking-widest text-sm">Control clearance overrides and bulk operations.</p>
         </div>
-        <button onClick={() => setModalOpen(true)} className="bg-[#121212] text-white px-6 py-4 font-black uppercase text-xs tracking-widest flex items-center gap-2 hover:bg-black border-4 border-[#121212] transition-colors shadow-[4px_4px_0px_0px_#F0C020]">
-           <Plus className="w-5 h-5" /> Create New Student
-        </button>
+        <div className="flex gap-4">
+          <input 
+            type="file" 
+            accept=".csv" 
+            className="hidden" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+          />
+          <button 
+            onClick={() => fileInputRef.current?.click()} 
+            disabled={submitting}
+            className="bg-white text-[#121212] px-6 py-4 font-black uppercase text-xs tracking-widest flex items-center gap-2 hover:bg-[#F9F9F9] border-4 border-[#121212] transition-colors shadow-[4px_4px_0px_0px_#121212] disabled:opacity-50"
+          >
+             <FileUp className="w-5 h-5" /> Bulk Upload CSV
+          </button>
+          <button onClick={() => setModalOpen(true)} className="bg-[#121212] text-white px-6 py-4 font-black uppercase text-xs tracking-widest flex items-center gap-2 hover:bg-black border-4 border-[#121212] transition-colors shadow-[4px_4px_0px_0px_#F0C020]">
+             <Plus className="w-5 h-5" /> Create New Student
+          </button>
+        </div>
       </div>
 
       {/* Filter Bar */}

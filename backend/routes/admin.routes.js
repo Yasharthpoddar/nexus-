@@ -13,6 +13,7 @@ router.post('/students/notes', adminController.updateNotes);
 router.post('/certificates/issue', adminController.forceIssueCert);
 router.delete('/students/:id', adminController.deleteStudent);
 router.delete('/authorities/:id', adminController.deleteAuthority);
+router.post('/students/bulk', adminController.bulkRegisterStudents);
 router.post('/trigger-nudge', adminController.triggerNudge);
 
 module.exports = router;

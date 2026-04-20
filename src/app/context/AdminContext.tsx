@@ -34,6 +34,7 @@ interface AdminState {
   updatePipelineOrder: (order: string[]) => void;
   addAuthority: (auth: any) => Promise<void>;
   addStudent: (stu: any) => Promise<void>;
+  bulkAddStudents: (students: any[]) => Promise<any>;
   addCsvUpload: (fileData: any) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
   deleteAuthority: (id: string) => Promise<void>;
@@ -138,6 +139,15 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     fetchSyncData();
   };
 
+  const bulkAddStudents = async (students: any[]) => {
+    const token = localStorage.getItem('nexus_token');
+    const { data } = await axios.post('/api/admin/students/bulk', { students }, { 
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    fetchSyncData();
+    return data;
+  };
+
   // addCsvUpload: called by CsvUpload.tsx AFTER the real upload already succeeded.
   // Just update local history state — no backend call needed here.
   const addCsvUpload = async ({ filename, department, rows, flagged: flaggedCount }: any) => {
@@ -168,7 +178,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     <AdminContext.Provider value={{
       profile, students, authorities, settings, csvHistory, notifications, loading, refresh,
       toggleStudentBlock, overrideDepartmentStatus, updateAdminNotes, issueCertificate,
-      updateSettingsToggle, updatePipelineOrder, addAuthority, addStudent, addCsvUpload, deleteStudent, deleteAuthority
+      updateSettingsToggle, updatePipelineOrder, addAuthority, addStudent, bulkAddStudents, addCsvUpload, deleteStudent, deleteAuthority
     }}>
       {children}
     </AdminContext.Provider>

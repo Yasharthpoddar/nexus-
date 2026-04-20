@@ -252,6 +252,56 @@ const deleteStudent = async (req, res) => {
   }
 };
 
+const bulkRegisterStudents = async (req, res) => {
+  try {
+    const { students } = req.body;
+    if (!students || !Array.isArray(students)) {
+      return res.status(400).json({ success: false, message: 'Invalid students payload.' });
+    }
+
+    const results = { created: 0, failed: 0, errors: [] };
+
+    for (const s of students) {
+      try {
+        const hashedPassword = await bcrypt.hash(s.rollNo, 10);
+        
+        // 1. Create User
+        const { data: newUser, error: uErr } = await supabase.from('users').insert([{
+          name: s.name,
+          email: s.email,
+          password: hashedPassword,
+          role: 'student',
+          sub_role: 'student',
+          branch: s.branch,
+          batch: s.batch,
+          roll_number: s.rollNo,
+          is_blocked: false
+        }]).select('id').single();
+
+        if (uErr) throw new Error(uErr.message);
+
+        // 2. Create Application
+        await supabase.from('applications').insert([{
+          user_id: newUser.id,
+          status: 'submitted',
+          current_stage: 'library',
+          cert_status: 'Not Ready'
+        }]);
+
+        results.created++;
+      } catch (err) {
+        results.failed++;
+        results.errors.push({ email: s.email, error: err.message });
+      }
+    }
+
+    res.status(200).json({ success: true, results });
+  } catch (err) {
+    console.error('Bulk registration error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 const deleteAuthority = async (req, res) => {
   try {
     const { id } = req.params;
@@ -291,5 +341,6 @@ module.exports = {
   forceIssueCert,
   deleteStudent,
   deleteAuthority,
-  triggerNudge
+  triggerNudge,
+  bulkRegisterStudents
 };
