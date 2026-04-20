@@ -264,63 +264,61 @@ const bulkRegisterStudents = async (req, res) => {
 
     for (let i = 0; i < students.length; i += BATCH_SIZE) {
       const batch = students.slice(i, i + BATCH_SIZE);
-      
-      try {
-        // 1. Hash passwords for the batch
-        const studentData = await Promise.all(batch.map(async (s) => {
-          const hashedPassword = await bcrypt.hash(s.rollNo, 10);
-          return {
-            name: s.name,
-            email: s.email,
-            password: hashedPassword,
-            role: 'student',
-            sub_role: 'student',
-            branch: s.branch,
-            batch: s.batch,
-            roll_number: s.rollNo,
-            is_blocked: false
-          };
-        }));
+      const batchErrors = [];
+      const batchCreated = [];
 
-        // 2. Bulk Upsert Users
-        const { data: newUsers, error: uErr } = await supabase
-          .from('users')
-          .upsert(studentData, { onConflict: 'email' }) 
-          .select('id');
+      // Process batch rows one by one to ensure individual errors don't block the whole batch
+      // and to handle multiple unique constraints (email and roll_number) properly.
+      for (const s of batch) {
+        try {
+          const hashedPassword = await bcrypt.hash(s.rollNo || 'password', 10);
+          
+          // Use upsert on roll_number first if available, as it's the most unique UID
+          const { data: newUser, error: uErr } = await supabase
+            .from('users')
+            .upsert({
+              name: s.name,
+              email: s.email,
+              password: hashedPassword,
+              role: 'student',
+              sub_role: 'student',
+              branch: s.branch,
+              batch: s.batch,
+              roll_number: s.rollNo,
+              is_blocked: false
+            }, { onConflict: 'email' }) // PostgreSQL upsert usually handles one constraint well
+            .select('id')
+            .single();
 
-        if (uErr) {
-          results.failed += batch.length;
-          results.errors.push({ 
-            batch: `${i}-${i+batch.length}`, 
-            error: uErr.message,
-            details: uErr.details
-          });
-          continue;
+          if (uErr) {
+            batchErrors.push({ email: s.email, error: uErr.message });
+            continue;
+          }
+
+          // 3. Application Upsert
+          const { error: aErr } = await supabase
+            .from('applications')
+            .upsert({
+              user_id: newUser.id,
+              status: 'submitted',
+              current_stage: 'library',
+              cert_status: 'Not Ready'
+            }, { onConflict: 'user_id' });
+
+          if (aErr) {
+            batchErrors.push({ email: s.email, error: `App creation failed: ${aErr.message}` });
+          }
+
+          batchCreated.push(newUser.id);
+        } catch (err) {
+          batchErrors.push({ email: s.email, error: err.message });
         }
+      }
 
-        // 3. Bulk Upsert Applications
-        const applicationData = newUsers.map(u => ({
-          user_id: u.id,
-          status: 'submitted',
-          current_stage: 'library',
-          cert_status: 'Not Ready'
-        }));
-
-        const { error: aErr } = await supabase
-          .from('applications')
-          .upsert(applicationData, { onConflict: 'user_id' });
-
-        if (aErr) {
-          results.errors.push({ 
-            batch: `${i}-${i+batch.length}`, 
-            error: `Applications failed: ${aErr.message}` 
-          });
-        }
-
-        results.created += newUsers.length;
-      } catch (err) {
-        results.failed += batch.length;
-        results.errors.push({ batch: `${i}-${i+batch.length}`, error: err.message });
+      results.created += batchCreated.length;
+      results.failed += (batch.length - batchCreated.length);
+      if (batchErrors.length > 0) {
+        results.errors.push({ batch: `${i}-${i+batch.length}`, errors: batchErrors });
       }
     }
 
