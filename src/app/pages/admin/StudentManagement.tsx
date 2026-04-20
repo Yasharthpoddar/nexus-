@@ -67,30 +67,48 @@ export function StudentManagement() {
       const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
       
       // Skip header
-      if (lines.length < 2) {
+      const rawLines = content.split(/\r?\n/).filter(l => l.trim() !== "");
+      if (rawLines.length < 2) {
         triggerToast('CSV file is empty or missing data.');
         return;
       }
 
-      const parsedStudents = lines.slice(1).map(line => {
-        // Handle CSV with quotes or simple commas
-        const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-        if (cols.length < 5) return null;
+      // Smarter CSV parser for quoted fields and varied delimiters
+      const parseCSVLine = (line: string) => {
+        const result = [];
+        let cur = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') inQuotes = !inQuotes;
+          else if (char === ',' && !inQuotes) {
+            result.push(cur.trim());
+            cur = '';
+          } else cur += char;
+        }
+        result.push(cur.trim());
+        return result.map(v => v.replace(/^"|"$/g, ''));
+      };
+
+      const parsedStudents = rawLines.slice(1).map(line => {
+        const cols = parseCSVLine(line);
+        if (cols.length < 4) return null; // Basic check, UID might be missing in some lines
 
         return {
           email: cols[1],
           name: cols[2],
           rollNo: cols[3],
-          branch: cols[4],
+          branch: cols[4] || 'General',
           batch: cols[5] || '2025'
         };
-      }).filter(Boolean);
+      }).filter(h => h && h.email);
 
       if (parsedStudents.length === 0) {
-        triggerToast('No valid student records found in CSV.');
+        triggerToast('No valid student records found in CSV. Check column order.');
         return;
       }
 
+      alert(`Found ${parsedStudents.length} student records in CSV. Starting bulk upload...`);
       setSubmitting(true);
       let totalCreated = 0;
       let totalFailed = 0;
@@ -100,22 +118,26 @@ export function StudentManagement() {
         for (let i = 0; i < parsedStudents.length; i += CHUNK_SIZE) {
           const chunk = parsedStudents.slice(i, i + CHUNK_SIZE);
           const result = await bulkAddStudents(chunk);
+          
           totalCreated += result.results?.created || 0;
           totalFailed += result.results?.failed || 0;
           
-          // Optional: intermediate progress feedback
-          triggerToast(`Processing... ${Math.min(i + CHUNK_SIZE, parsedStudents.length)}/${parsedStudents.length} students`);
+          if (result.results?.errors?.length > 0) {
+            console.warn(`Batch ${i} has errors:`, result.results.errors);
+          }
+
+          triggerToast(`Progress: ${Math.min(i + CHUNK_SIZE, parsedStudents.length)}/${parsedStudents.length} students...`);
         }
         
         if (totalCreated > 0) {
-          triggerToast(`Success! Processed ${totalCreated} students. ${totalFailed > 0 ? `${totalFailed} failed.` : ''}`);
-        } else if (parsedStudents.length > 0) {
-          triggerToast(`Upload failed: 0 students created. Check for duplicates or format errors.`);
+          triggerToast(`Upload Successful! Added/Updated ${totalCreated} students.`);
+          if (totalFailed > 0) triggerToast(`${totalFailed} records were skipped/errored. See console.`);
+        } else {
+          triggerToast(`Upload finished: 0 new students added. They might all already exist.`);
         }
       } catch (err: any) {
-        console.error("Bulk upload error:", err);
-        const errorMsg = err.response?.data?.message || 'Check connection or CSV format.';
-        triggerToast(`Bulk upload failed: ${errorMsg}`);
+        console.error("Bulk upload fatal error:", err);
+        triggerToast(`Upload failed: ${err.response?.data?.message || err.message}`);
       } finally {
         setSubmitting(false);
         if(fileInputRef.current) fileInputRef.current.value = '';

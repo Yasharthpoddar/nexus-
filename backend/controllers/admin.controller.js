@@ -283,20 +283,22 @@ const bulkRegisterStudents = async (req, res) => {
         }));
 
         // 2. Bulk Upsert Users
-        // Upsert allows us to update existing records instead of failing the whole batch on duplicates
         const { data: newUsers, error: uErr } = await supabase
           .from('users')
           .upsert(studentData, { onConflict: 'email' }) 
           .select('id');
 
         if (uErr) {
-          console.error(`[BATCH ERROR ${i}] User Upsert Failed:`, uErr);
           results.failed += batch.length;
-          results.errors.push({ batch: `${i}-${i+BATCH_SIZE}`, error: uErr.message });
+          results.errors.push({ 
+            batch: `${i}-${i+batch.length}`, 
+            error: uErr.message,
+            details: uErr.details
+          });
           continue;
         }
 
-        // 3. Bulk Insert Applications for this batch
+        // 3. Bulk Upsert Applications
         const applicationData = newUsers.map(u => ({
           user_id: u.id,
           status: 'submitted',
@@ -306,16 +308,19 @@ const bulkRegisterStudents = async (req, res) => {
 
         const { error: aErr } = await supabase
           .from('applications')
-          .insert(applicationData);
+          .upsert(applicationData, { onConflict: 'user_id' });
 
         if (aErr) {
-          results.errors.push({ batch: `${i}-${i+BATCH_SIZE}`, error: `Applications failed: ${aErr.message}` });
+          results.errors.push({ 
+            batch: `${i}-${i+batch.length}`, 
+            error: `Applications failed: ${aErr.message}` 
+          });
         }
 
         results.created += newUsers.length;
       } catch (err) {
         results.failed += batch.length;
-        results.errors.push({ batch: `${i}-${i+BATCH_SIZE}`, error: err.message });
+        results.errors.push({ batch: `${i}-${i+batch.length}`, error: err.message });
       }
     }
 
