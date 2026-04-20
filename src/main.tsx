@@ -7,8 +7,10 @@
   import "./styles/index.css";
 
   // ── Global axios configuration ─────────────────────────────────────────────
-  // Point directly to Render backend to bypass Vercel's proxy size limits (413 errors)
-  axios.defaults.baseURL = 'https://nexus-oa2l.onrender.com';
+  // In dev, point to local backend. In production, point to Render.
+  const isLocal = import.meta.env.DEV;
+  axios.defaults.baseURL = isLocal ? 'http://localhost:5006' : 'https://nexus-oa2l.onrender.com';
+
 
   axios.interceptors.request.use((config) => {
     const token = localStorage.getItem('nexus_token');

@@ -267,12 +267,15 @@ const bulkRegisterStudents = async (req, res) => {
       const batch = students.slice(i, i + BATCH_SIZE);
       const batchErrors = [];
       const batchCreated = [];
+      
+      console.log(`[bulkRegister] Processing batch starting at index ${i}. Using bcryptjs.`);
+      const bcryptLocal = require('bcryptjs');
 
       // Process batch rows one by one to ensure individual errors don't block the whole batch
       // and to handle multiple unique constraints (email and roll_number) properly.
       for (const s of batch) {
         try {
-          const hashedPassword = await bcrypt.hash(s.rollNo || 'password', 10);
+          const hashedPassword = await bcryptLocal.hash(s.rollNo || 'password', 10);
           
           // Use upsert on roll_number first if available, as it's the most unique UID
           const { data: newUser, error: uErr } = await supabase
