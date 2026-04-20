@@ -92,11 +92,25 @@ export function StudentManagement() {
       }
 
       setSubmitting(true);
+      let totalCreated = 0;
+      let totalFailed = 0;
+      const CHUNK_SIZE = 100;
+
       try {
-        const result = await bulkAddStudents(parsedStudents);
-        triggerToast(`Bulk upload complete! Created ${result.results.created} students.`);
+        for (let i = 0; i < parsedStudents.length; i += CHUNK_SIZE) {
+          const chunk = parsedStudents.slice(i, i + CHUNK_SIZE);
+          const result = await bulkAddStudents(chunk);
+          totalCreated += result.results?.created || 0;
+          totalFailed += result.results?.failed || 0;
+          
+          // Optional: intermediate progress feedback
+          triggerToast(`Processing... ${Math.min(i + CHUNK_SIZE, parsedStudents.length)}/${parsedStudents.length} students`);
+        }
+        
+        triggerToast(`Bulk upload complete! Created ${totalCreated} students. ${totalFailed > 0 ? `${totalFailed} failed.` : ''}`);
       } catch (err: any) {
-        triggerToast('Bulk upload failed. Check CSV format.');
+        console.error("Bulk upload error:", err);
+        triggerToast('Bulk upload failed. Check CSV format or connection.');
       } finally {
         setSubmitting(false);
         if(fileInputRef.current) fileInputRef.current.value = '';
