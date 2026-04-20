@@ -107,10 +107,15 @@ export function StudentManagement() {
           triggerToast(`Processing... ${Math.min(i + CHUNK_SIZE, parsedStudents.length)}/${parsedStudents.length} students`);
         }
         
-        triggerToast(`Bulk upload complete! Created ${totalCreated} students. ${totalFailed > 0 ? `${totalFailed} failed.` : ''}`);
+        if (totalCreated > 0) {
+          triggerToast(`Success! Processed ${totalCreated} students. ${totalFailed > 0 ? `${totalFailed} failed.` : ''}`);
+        } else if (parsedStudents.length > 0) {
+          triggerToast(`Upload failed: 0 students created. Check for duplicates or format errors.`);
+        }
       } catch (err: any) {
         console.error("Bulk upload error:", err);
-        triggerToast('Bulk upload failed. Check CSV format or connection.');
+        const errorMsg = err.response?.data?.message || 'Check connection or CSV format.';
+        triggerToast(`Bulk upload failed: ${errorMsg}`);
       } finally {
         setSubmitting(false);
         if(fileInputRef.current) fileInputRef.current.value = '';

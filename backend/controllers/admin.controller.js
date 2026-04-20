@@ -282,14 +282,15 @@ const bulkRegisterStudents = async (req, res) => {
           };
         }));
 
-        // 2. Bulk Insert Users
+        // 2. Bulk Upsert Users
+        // Upsert allows us to update existing records instead of failing the whole batch on duplicates
         const { data: newUsers, error: uErr } = await supabase
           .from('users')
-          .insert(studentData)
+          .upsert(studentData, { onConflict: 'email' }) 
           .select('id');
 
         if (uErr) {
-          // If bulk fails, log and continue to next batch (or handle individual errors)
+          console.error(`[BATCH ERROR ${i}] User Upsert Failed:`, uErr);
           results.failed += batch.length;
           results.errors.push({ batch: `${i}-${i+BATCH_SIZE}`, error: uErr.message });
           continue;
