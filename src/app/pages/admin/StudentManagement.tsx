@@ -109,6 +109,7 @@ export function StudentManagement() {
       setSubmitting(true);
       let totalCreated = 0;
       let totalFailed = 0;
+      let errorSummary = "";
       const CHUNK_SIZE = 100;
 
       try {
@@ -121,6 +122,10 @@ export function StudentManagement() {
           
           if (result.results?.errors?.length > 0) {
             console.warn(`Batch ${i} has errors:`, result.results.errors);
+            if (!errorSummary) {
+              const firstErrObj = result.results.errors[0]?.errors?.[0] || result.results.errors[0];
+              errorSummary = firstErrObj.error || firstErrObj.message || "Unknown batch error";
+            }
           }
 
           triggerToast(`Progress: ${Math.min(i + CHUNK_SIZE, parsedStudents.length)}/${parsedStudents.length} students...`);
@@ -130,13 +135,12 @@ export function StudentManagement() {
           triggerToast(`Upload Successful! Added/Updated ${totalCreated} students.`);
           if (totalFailed > 0) {
             triggerToast(`${totalFailed} records were skipped/errored. See console.`);
-            const firstError = result.results?.errors?.[0]?.errors?.[0]?.error;
-            if (firstError) alert(`Note: Some records failed. Example error: ${firstError}`);
+            if (errorSummary) alert(`Note: Some records failed. Example error: ${errorSummary}`);
           }
         } else {
-          const firstError = result.results?.errors?.[0]?.errors?.[0]?.error;
           triggerToast(`Upload finished: 0 new students added.`);
-          if (firstError) alert(`Critical Error: ${firstError}`);
+          if (errorSummary) alert(`Critical Error: ${errorSummary}`);
+          else if (parsedStudents.length > 0) alert("Upload completed but no students were created. Please check if they already exist.");
         }
       } catch (err: any) {
         console.error("Bulk upload fatal error:", err);
