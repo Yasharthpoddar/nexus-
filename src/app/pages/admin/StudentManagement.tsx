@@ -64,10 +64,7 @@ export function StudentManagement() {
     const reader = new FileReader();
     reader.onload = async (event) => {
       const text = event.target?.result as string;
-      const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-      
-      // Skip header
-      const rawLines = content.split(/\r?\n/).filter(l => l.trim() !== "");
+      const rawLines = text.split(/\r?\n/).filter(l => l.trim() !== "");
       if (rawLines.length < 2) {
         triggerToast('CSV file is empty or missing data.');
         return;
