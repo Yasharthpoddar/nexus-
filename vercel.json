@@ -3,7 +3,7 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://YOUR-BACKEND-URL.onrender.com/api/$1" },
+    { "source": "/api/(.*)", "destination": "https://nexus-oa2l.onrender.com/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
