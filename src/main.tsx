@@ -6,7 +6,10 @@
   import App from "./app/App.tsx";
   import "./styles/index.css";
 
-  // ── Global axios interceptor — attach Bearer token to every request ──────────
+  // ── Global axios configuration ─────────────────────────────────────────────
+  // Point directly to Render backend to bypass Vercel's proxy size limits (413 errors)
+  axios.defaults.baseURL = 'https://nexus-oa2l.onrender.com';
+
   axios.interceptors.request.use((config) => {
     const token = localStorage.getItem('nexus_token');
     if (token) {
