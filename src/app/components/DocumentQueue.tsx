@@ -1,18 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import axios from 'axios';
+import api from '../api';
 import {
   Search, FileText, ChevronRight, Loader2, CheckCircle2,
   RotateCcw, ArrowUpDown, Eye
 } from 'lucide-react';
 
 interface Props {
-  stage: 'lab' | 'hod' | 'principal';
+  stage: 'lab' | 'librarian' | 'hod' | 'principal';
   portalPrefix: string;
   title?: string;
 }
 
-const stageLabel = (s: string) => ({ lab: 'Lab', hod: 'HOD', principal: 'Principal' }[s] || s);
+const stageLabel = (s: string) => ({ 
+  lab: 'Lab', 
+  librarian: 'Library', 
+  hod: 'HOD', 
+  principal: 'Principal' 
+}[s] || s);
 
 export function DocumentQueue({ stage, portalPrefix, title }: Props) {
   const navigate = useNavigate();
@@ -21,12 +26,9 @@ export function DocumentQueue({ stage, portalPrefix, title }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<'oldest' | 'newest'>('oldest');
 
-  const token = localStorage.getItem('nexus_token');
-  const headers = { Authorization: `Bearer ${token}` };
-
   const fetchPending = useCallback(async () => {
     try {
-      const { data } = await axios.get(`/api/documents/pending/${stage}`, { headers });
+      const { data } = await api.get(`/api/documents/pending/${stage}`);
       setDocuments(data.documents || []);
     } catch (e) { console.error('Document queue fetch error', e); }
     finally { setLoading(false); }

@@ -6,7 +6,6 @@ import {
   EyeOff, 
   CheckCircle2
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
 
 const InputField = ({ label, type = "text", error, ...props }: any) => {
   return (
@@ -29,14 +28,16 @@ export function AuthPage() {
   const [redirectingUser, setRedirectingUser] = useState<User | null>(null);
 
   const getRouteForRole = (user: User) => {
-    if (user.role === 'student') return '/dashboard';
     const effectiveRole = user.sub_role || user.role;
+    if (user.role === 'student') return '/dashboard';
+    
     switch(effectiveRole) {
       case 'lab-incharge': return '/lab/dashboard';
-      case 'hod': return '/hod/dashboard';
-      case 'principal': return '/principal/dashboard';
-      case 'admin': return '/admin/dashboard';
-      default: return '/dashboard';
+      case 'librarian':    return '/authority/dashboard';
+      case 'hod':          return '/hod/dashboard';
+      case 'principal':    return '/principal/dashboard';
+      case 'admin':        return '/admin/dashboard';
+      default:             return '/dashboard';
     }
   };
 
@@ -65,25 +66,13 @@ export function AuthPage() {
     <div className="min-h-screen bg-[#F0F0F0] flex items-center justify-center p-4">
       <div className="w-full max-w-[440px] bg-white border-4 border-[#121212] flex flex-col shadow-[8px_8px_0px_0px_#121212] relative overflow-hidden">
         
-        <AnimatePresence>
-          {successAnimation && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="absolute inset-0 z-50 bg-[#1040C0] text-white flex flex-col items-center justify-center p-8"
-            >
-              <motion.div
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: "spring", delay: 0.2 }}
-              >
-                <CheckCircle2 className="w-20 h-20 mb-6" />
-              </motion.div>
-              <h2 className="font-black text-2xl uppercase tracking-tight text-center">Authentication<br/>Successful</h2>
-              <p className="text-sm font-medium opacity-80 mt-2 text-center">{getRedirectMessage()}</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {successAnimation && (
+          <div className="absolute inset-0 z-50 bg-[#1040C0] text-white flex flex-col items-center justify-center p-8">
+            <CheckCircle2 className="w-20 h-20 mb-6" />
+            <h2 className="font-black text-2xl uppercase tracking-tight text-center">Authentication<br/>Successful</h2>
+            <p className="text-sm font-medium opacity-80 mt-2 text-center">{getRedirectMessage()}</p>
+          </div>
+        )}
 
         <div className="pt-8 pb-4 flex flex-col items-center justify-center">
            <div className="w-14 h-14 bg-[#F0C020] border-4 border-[#121212] rounded-full flex items-center justify-center mb-4">

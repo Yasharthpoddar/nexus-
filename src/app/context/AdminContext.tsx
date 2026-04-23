@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api';
 import { useAuth } from './AuthContext';
 
 export type DeptStatus = 'Cleared' | 'Pending' | 'Action Required' | 'Blocked';
@@ -62,8 +62,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     const effectiveRole = currentUser?.sub_role || currentUser?.role;
     if (!currentUser || effectiveRole !== 'admin') { setLoading(false); return; }
     try {
-      const token = localStorage.getItem('nexus_token');
-      const { data } = await axios.get('/api/admin/sync', { headers: { Authorization: `Bearer ${token}` }});
+      const { data } = await api.get('/api/admin/sync');
       const res = data.data;
       setProfile({ name: currentUser.name, email: currentUser.email });
       setAuthorities(res.authorities);
@@ -84,27 +83,23 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const refresh = async () => { setLoading(true); await fetchSyncData(); };
 
   const toggleStudentBlock = async (id: string, blocked?: boolean) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/admin/students/block', { id, blocked }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post('/api/admin/students/block', { id, blocked });
     fetchSyncData();
   };
 
   const overrideDepartmentStatus = async (studentId: string, deptName: string, status: DeptStatus) => {
-    const token = localStorage.getItem('nexus_token');
     // Map Action Required -> Action Required. Frontend sends Pending / Cleared / Blocked.
-    await axios.post('/api/admin/students/override', { studentId, deptName, status }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post('/api/admin/students/override', { studentId, deptName, status });
     fetchSyncData();
   };
 
   const updateAdminNotes = async (id: string, notes: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/admin/students/notes', { id, notes }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post('/api/admin/students/notes', { id, notes });
     fetchSyncData();
   };
 
   const issueCertificate = async (studentId: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/admin/certificates/issue', { studentId }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post('/api/admin/certificates/issue', { studentId });
     fetchSyncData();
   };
 
@@ -115,19 +110,17 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const updatePipelineOrder = (order: string[]) => setSettings(p => ({ ...p, pipelineOrder: order }));
 
   const addAuthority = async (auth: any) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/auth/register', {
+    await api.post('/api/auth/register', {
       name: auth.name,
       email: auth.email,
       password: auth.password,
       role: auth.role, // already mapped to sub_role value by component (e.g. 'lab-incharge')
-    }, { headers: { Authorization: `Bearer ${token}` }});
+    });
     fetchSyncData();
   };
 
   const addStudent = async (stu: any) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/auth/register', {
+    await api.post('/api/auth/register', {
       name: stu.name,
       email: stu.email,
       password: stu.password,
@@ -135,15 +128,12 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       branch: stu.branch,
       batch: stu.batch,
       rollNo: stu.rollNo || null
-    }, { headers: { Authorization: `Bearer ${token}` }});
+    });
     fetchSyncData();
   };
 
   const bulkAddStudents = async (students: any[]) => {
-    const token = localStorage.getItem('nexus_token');
-    const { data } = await axios.post('/api/admin/students/bulk', { students }, { 
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const { data } = await api.post('/api/admin/students/bulk', { students });
     fetchSyncData();
     return data;
   };
@@ -163,14 +153,12 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteStudent = async (id: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.delete(`/api/admin/students/${id}`, { headers: { Authorization: `Bearer ${token}` }});
+    await api.delete(`/api/admin/students/${id}`);
     fetchSyncData();
   };
 
   const deleteAuthority = async (id: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.delete(`/api/admin/authorities/${id}`, { headers: { Authorization: `Bearer ${token}` }});
+    await api.delete(`/api/admin/authorities/${id}`);
     fetchSyncData();
   };
 

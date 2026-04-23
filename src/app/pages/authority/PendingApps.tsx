@@ -9,12 +9,14 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DocumentQueue } from '../../components/DocumentQueue';
+import { safeDate } from '../../utils/formatters';
 
 export function PendingApps() {
   const { pendingApps, approveApplication, flagApplication } = useAuthority();
   const { currentUser } = useAuth();
-  // HOD portal always lives under /hod
-  const basePath = `/hod`;
+  
+  const role = currentUser?.sub_role?.toLowerCase() || 'hod';
+  const basePath = role === 'principal' ? '/principal' : role === 'librarian' ? '/library' : '/hod';
   
   const [selected, setSelected] = useState<string[]>([]);
   const [search, setSearch] = useState('');
@@ -25,8 +27,21 @@ export function PendingApps() {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
   const selectAll = () => {
-    if(selected.length === filteredApps.length) setSelected([]);
-    else setSelected(filteredApps.map(a => a.id));
+    // Only select apps that are actually 'Ready' for approval to prevent bypass
+    const readyApps = filteredApps.filter(a => isAppReady(a));
+    if(selected.length === readyApps.length) setSelected([]);
+    else setSelected(readyApps.map(a => a.id));
+  };
+
+  const isAppReady = (app: any) => {
+    const deptStatuses = app.departmentStatuses || {};
+    const isLabCleared = deptStatuses.lab === 'Cleared';
+    const isLibCleared = deptStatuses.lib === 'Cleared';
+    const isHodCleared = deptStatuses.hod === 'Cleared';
+
+    if (role === 'hod') return isLabCleared && isLibCleared;
+    if (role === 'principal') return isLabCleared && isLibCleared && isHodCleared;
+    return true; // Lab/Library are entry gates
   };
 
   const filteredApps = pendingApps.filter(a =>

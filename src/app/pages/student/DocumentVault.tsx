@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import axios from 'axios';
+import api from '../../api';
 import {
   UploadCloud, File, RefreshCw, Eye, AlertTriangle, CheckCircle2, X,
   Download, Loader2, ChevronRight, RotateCcw, Shield, FileCheck
@@ -43,8 +43,8 @@ function pathTagline(dt: DocType): string {
   if (dt.requires_lab) parts.push('Lab');
   if (dt.requires_hod) parts.push('HOD');
   if (dt.requires_principal) parts.push('Principal');
-  const route = parts.join(' → ');
-  return `${route}${dt.generates_certificate ? ' — Auto-certified' : ''}`;
+  const route = parts.join(' -> ');
+  return `${route}${dt.generates_certificate ? ' - Auto-certified' : ''}`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -65,19 +65,26 @@ export function DocumentVault() {
   const inputRef = useRef<HTMLInputElement>(null);
   const resubmitRef = useRef<HTMLInputElement>(null);
 
-  const token = localStorage.getItem('nexus_token');
-  const headers = { Authorization: `Bearer ${token}` };
 
   const fetchData = useCallback(async () => {
+    // 1. Fetch Categories (Independent)
     try {
-      const [typesRes, docsRes] = await Promise.all([
-        axios.get('/api/documents/types', { headers }),
-        axios.get('/api/documents/mine', { headers })
-      ]);
+      const typesRes = await api.get('/api/documents/types');
       setDocTypes(typesRes.data.documentTypes || []);
+    } catch (e) { 
+      console.error('Vault Types fetch error', e); 
+      // Fallback empty if needed
+    }
+
+    // 2. Fetch User Documents (Independent)
+    try {
+      const docsRes = await api.get('http://127.0.0.1:5006/api/documents/mine');
       setDocuments(docsRes.data.documents || []);
-    } catch (e) { console.error('Vault fetch error', e); }
-    finally { setLoading(false); }
+    } catch (e) { 
+      console.error('Vault Documents fetch error', e); 
+    }
+    
+    setLoading(false);
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -92,24 +99,25 @@ export function DocumentVault() {
   const handleUpload = async (file: File) => {
     setError(''); setSuccess('');
     if (!selectedTypeCode) { setError('Select a document type first.'); return; }
-    if (file.size > 10 * 1024 * 1024) { setError('File exceeds 10 MB limit.'); return; }
+    if (file.size > 5 * 1024 * 1024) { setError('File exceeds 5 MB limit.'); return; }
 
     setUploading(true);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('document', file); // Audit D1: Use 'document'
       fd.append('doc_type_code', selectedTypeCode);
       fd.append('name', file.name);
 
-      await axios.post('/api/documents/upload', fd, {
-        headers: { ...headers, 'Content-Type': 'multipart/form-data' }
-      });
+      await api.post('/api/documents/upload', fd);
       setSuccess(`"${file.name}" uploaded successfully.`);
       setSelectedTypeCode('');
       await fetchData();
     } catch (e: any) {
-      setError(e.response?.data?.message || 'Upload failed.');
-    } finally { setUploading(false); }
+      setError(e.response?.data?.error || e.response?.data?.message || 'Upload failed.');
+    } finally { 
+      setUploading(false); 
+      if (inputRef.current) inputRef.current.value = '';
+    }
   };
 
   /* ── Resubmit ────────────────────────────────────────────────────────────── */
@@ -118,22 +126,23 @@ export function DocumentVault() {
     setResubmitting(true); setError('');
     try {
       const fd = new FormData();
-      fd.append('file', resubmitFile);
-      await axios.post(`/api/documents/${resubmitDocId}/resubmit`, fd, {
-        headers: { ...headers, 'Content-Type': 'multipart/form-data' }
-      });
+      fd.append('document', resubmitFile); // Audit D1: Use 'document'
+      await api.post(`/api/documents/${resubmitDocId}/resubmit`, fd);
       setSuccess('Document resubmitted for review.');
       setResubmitDocId(null); setResubmitFile(null);
       await fetchData();
     } catch (e: any) {
-      setError(e.response?.data?.message || 'Resubmission failed.');
-    } finally { setResubmitting(false); }
+      setError(e.response?.data?.error || e.response?.data?.message || 'Resubmission failed.');
+    } finally { 
+      setResubmitting(false); 
+      if (resubmitRef.current) resubmitRef.current.value = '';
+    }
   };
 
   const handleCertDownload = async (docId: string) => {
     try {
-      const resp = await axios.get(`/api/documents/${docId}/certificate`, {
-        headers, responseType: 'blob'
+      const resp = await api.get(`/api/documents/${docId}/certificate`, {
+        responseType: 'blob'
       });
       const url = URL.createObjectURL(resp.data);
       const a = document.createElement('a'); a.href = url; a.download = `certificate-${docId}.pdf`;
@@ -150,8 +159,8 @@ export function DocumentVault() {
   const statusPill = (doc: PipelineDocument) => {
     const s = doc.overall_status;
     const base = 'px-3 py-1 border-2 font-black text-[10px] uppercase tracking-widest inline-flex items-center gap-1.5';
-    if (s === 'approved' && doc.certificate_id) return <span className={`${base} bg-[#121212] text-white border-[#121212]`}><Download className="w-3 h-3" /> Cert Ready</span>;
-    if (s === 'approved') return <span className={`${base} bg-[#121212] text-white border-[#121212]`}><CheckCircle2 className="w-3 h-3" /> Verified</span>;
+    if (s === 'approved' && doc.certificate_id) return <span className={`${base} bg-[#10A040] text-white border-[#10A040]`}><Download className="w-3 h-3" /> Cert Ready</span>;
+    if (s === 'approved') return <span className={`${base} bg-[#10A040] text-white border-[#10A040]`}><CheckCircle2 className="w-3 h-3" /> Verified</span>;
     if (s === 'needs_resubmission') return <span className={`${base} text-[#D02020] border-[#D02020] bg-[#D02020]/5`}><AlertTriangle className="w-3 h-3" /> Needs Resubmission</span>;
     if (s === 'in_progress') return <span className={`${base} text-[#1040C0] border-[#1040C0] bg-[#1040C0]/5`}><Loader2 className="w-3 h-3 animate-spin" /> In Progress</span>;
     return <span className={`${base} text-gray-500 border-gray-300 bg-gray-50`}>Pending</span>;
@@ -267,13 +276,12 @@ export function DocumentVault() {
         <div className="md:w-3/5">
           <label className="font-black uppercase text-xs tracking-widest mb-2 block">2. Upload File</label>
           <div
+            onClick={() => inputRef.current?.click()}
             className={`w-full border-4 border-dashed transition-all flex flex-col items-center justify-center p-8 relative ${
               dragActive ? 'border-[#1040C0] bg-[#1040C0]/5' : 'border-[#121212] bg-[#F9F9F9] hover:bg-[#F0F0F0]'
             } ${uploading ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
-            onDragEnter={onDrag} onDragLeave={onDrag} onDragOver={onDrag} onDrop={onDrop}
-            onClick={() => inputRef.current?.click()}
           >
-            <input ref={inputRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={onChange} />
+            <input ref={inputRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png" onChange={onChange} />
             {uploading ? (
               <div className="flex flex-col items-center">
                 <Loader2 className="w-10 h-10 mb-4 animate-spin text-[#1040C0]" />
@@ -283,7 +291,7 @@ export function DocumentVault() {
               <>
                 <UploadCloud className="w-10 h-10 mb-4 text-[#121212]" strokeWidth={2} />
                 <p className="font-black text-lg uppercase tracking-tight mb-1 text-center">Drag & Drop or Click to Browse</p>
-                <p className="text-sm font-medium opacity-60 text-center">PDF, JPEG, PNG, DOC (Max 10 MB)</p>
+                <p className="text-sm font-medium opacity-60 text-center">PDF, JPEG, PNG (Max 5 MB)</p>
               </>
             )}
           </div>
@@ -356,30 +364,28 @@ export function DocumentVault() {
 
                   {/* Actions */}
                   <div className="pt-4 mt-4 border-t-2 border-[#F0F0F0] flex gap-2">
-                    {isRejected ? (
-                      resubmitDocId === doc.id ? (
-                        <div className="flex-1 space-y-2">
-                          <input ref={resubmitRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                            onChange={(e) => { if (e.target.files?.[0]) setResubmitFile(e.target.files[0]); }} />
-                          <button onClick={() => resubmitRef.current?.click()}
-                            className="w-full p-2 border-2 border-dashed border-[#1040C0] bg-[#1040C0]/5 text-[#1040C0] font-bold text-xs uppercase text-center">
-                            {resubmitFile ? `✓ ${resubmitFile.name}` : 'Click to select revised file'}
-                          </button>
-                          <div className="flex gap-2">
-                            <button onClick={() => { setResubmitDocId(null); setResubmitFile(null); }}
-                              className="flex-1 py-2 border-2 border-[#121212] font-bold text-xs uppercase">Cancel</button>
-                            <button onClick={handleResubmit} disabled={!resubmitFile || resubmitting}
-                              className="flex-1 py-2 bg-[#1040C0] text-white border-2 border-[#121212] font-bold text-xs uppercase disabled:opacity-40 flex items-center justify-center gap-1">
-                              {resubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3" />} Resubmit
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button onClick={() => setResubmitDocId(doc.id)}
-                          className="flex-1 bg-[#D02020] text-white py-2 border-2 border-[#121212] font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-red-700">
-                          <RotateCcw className="w-3 h-3" /> Resubmit Document
+                    {resubmitDocId === doc.id ? (
+                      <div className="flex-1 space-y-2">
+                        <input ref={resubmitRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png"
+                          onChange={(e) => { if (e.target.files?.[0]) setResubmitFile(e.target.files[0]); }} />
+                        <button onClick={() => resubmitRef.current?.click()}
+                          className="w-full p-2 border-2 border-dashed border-[#1040C0] bg-[#1040C0]/5 text-[#1040C0] font-bold text-xs uppercase text-center">
+                          {resubmitFile ? `✓ ${resubmitFile.name}` : 'Click to select revised file'}
                         </button>
-                      )
+                        <div className="flex gap-2">
+                          <button onClick={() => { setResubmitDocId(null); setResubmitFile(null); }}
+                            className="flex-1 py-2 border-2 border-[#121212] font-bold text-xs uppercase">Cancel</button>
+                          <button onClick={handleResubmit} disabled={!resubmitFile || resubmitting}
+                            className="flex-1 py-2 bg-[#1040C0] text-white border-2 border-[#121212] font-bold text-xs uppercase disabled:opacity-40 flex items-center justify-center gap-1">
+                            {resubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3" />} Resubmit
+                          </button>
+                        </div>
+                      </div>
+                    ) : isRejected ? (
+                      <button onClick={() => setResubmitDocId(doc.id)}
+                        className="flex-1 bg-[#D02020] text-white py-2 border-2 border-[#121212] font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-red-700">
+                        <RotateCcw className="w-3 h-3" /> Resubmit Document
+                      </button>
                     ) : (
                       <>
                         <button onClick={() => setPreviewDoc(doc)}
@@ -410,7 +416,7 @@ export function DocumentVault() {
             <div className="bg-[#121212] text-white p-4 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <FileCheck className="w-5 h-5" />
-                <h2 className="font-black text-sm uppercase tracking-widest">{previewDoc.name} — Verification Trail</h2>
+                <h2 className="font-black text-sm uppercase tracking-widest">{previewDoc.name} - Verification Trail</h2>
               </div>
               <button onClick={() => setPreviewDoc(null)} className="hover:bg-white/20 p-1"><X className="w-5 h-5" /></button>
             </div>
@@ -424,7 +430,7 @@ export function DocumentVault() {
                     'border-gray-200 bg-gray-50'
                   }`}>
                     <div className="flex justify-between items-center mb-1">
-                      <span className="font-black text-xs uppercase tracking-widest">{stageLabel(v.stage)} — {v.status}</span>
+                      <span className="font-black text-xs uppercase tracking-widest">{stageLabel(v.stage)} - {v.status}</span>
                       {v.actioned_at && <span className="text-[10px] font-mono opacity-60">{new Date(v.actioned_at).toLocaleDateString('en-IN')}</span>}
                     </div>
                     {v.users && <p className="text-xs font-medium opacity-70">By: {v.users.name}</p>}

@@ -9,9 +9,6 @@ router.get('/sync', studentController.getSyncPayload);
 
 router.post('/pay', studentController.payDue);
 
-router.post('/document', studentController.uploadDocument);
-router.delete('/document/:docId', studentController.deleteDocument);
-
 router.post('/notifications/read', studentController.markNotificationRead);
 router.post('/notifications/read-all', studentController.markAllNotificationsRead);
 

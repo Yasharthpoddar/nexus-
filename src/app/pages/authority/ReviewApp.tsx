@@ -5,16 +5,19 @@ import { useAuth } from '../../context/AuthContext';
 import { format } from 'date-fns';
 import { 
   ChevronRight, ArrowLeft, CheckCircle2, AlertOctagon,
-  FileText, ExternalLink, Paperclip, MessageSquare
+  FileText, ExternalLink, Paperclip, MessageSquare, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { safeDate } from '../../utils/formatters';
 
 export function ReviewApp() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { pendingApps, reviewedApps, approveApplication, flagApplication, toggleDocumentVerification } = useAuthority();
   const { currentUser } = useAuth();
-  const basePath = `/hod`;
+  
+  const role = currentUser?.sub_role?.toLowerCase() || 'hod';
+  const basePath = role === 'principal' ? '/principal' : role === 'librarian' ? '/library' : '/hod';
 
   const application = pendingApps.find(a => a.id === id) || reviewedApps.find(a => a.id === id);
   
@@ -28,6 +31,25 @@ export function ReviewApp() {
   }
 
   const isDecided = application.status !== 'Pending';
+
+  // Audit G1: Sequential Logic
+  const deptStatuses = application.departmentStatuses || {};
+  const isLabCleared  = deptStatuses.lab === 'Cleared';
+  const isLibCleared  = deptStatuses.lib === 'Cleared';
+  const isHodCleared  = deptStatuses.hod === 'Cleared';
+
+  let canApprove = true;
+  let blockingDept = '';
+
+  if (role === 'hod') {
+    if (!isLabCleared) { canApprove = false; blockingDept = 'Laboratory'; }
+    else if (!isLibCleared) { canApprove = false; blockingDept = 'Library'; }
+  } else if (role === 'principal') {
+    if (!isLabCleared) { canApprove = false; blockingDept = 'Laboratory'; }
+    else if (!isLibCleared) { canApprove = false; blockingDept = 'Library'; }
+    else if (!isHodCleared) { canApprove = false; blockingDept = 'HOD'; }
+  }
+  // Lab and Library (Librarian) are the starting gates, so they are never blocked by others.
 
   const handleDecision = (type: 'approve' | 'flag') => {
     if (type === 'flag' && !comment.trim()) {
@@ -107,7 +129,7 @@ export function ReviewApp() {
                   <p className="font-bold opacity-60">Roll No:</p> <p className="font-mono">{application.rollNo}</p>
                   <p className="font-bold opacity-60">Branch:</p> <p className="font-mono">{application.branch} '{application.batch.substring(2)}</p>
                   <p className="font-bold opacity-60">Email:</p> <p className="font-mono">{application.email}</p>
-                  <p className="font-bold opacity-60">Submitted:</p> <p className="font-mono">{format(new Date(application.submissionDate), 'dd/MM/yyyy')}</p>
+                  <p className="font-bold opacity-60">Submitted:</p> <p className="font-mono">{safeDate(application.submissionDate)}</p>
                </div>
             </div>
          </div>
@@ -115,23 +137,35 @@ export function ReviewApp() {
          {/* Chain Stepper */}
          <div className="z-10 bg-[#F9F9F9] border-2 border-[#121212] p-4 lg:w-72 shrink-0">
             <p className="font-bold text-[10px] uppercase tracking-widest mb-4 opacity-70">Approval Progression</p>
-            <div className="flex items-center justify-between relative">
-               <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-[#E0E0E0] -z-10" />
-               <div className="absolute top-1/2 left-0 w-1/2 h-0.5 bg-[#1040C0] -z-10" />
+            <div className="flex items-center justify-between relative px-2">
+               <div className="absolute top-2.5 left-4 right-4 h-0.5 bg-[#E0E0E0] -z-10" />
                
                <div className="flex flex-col items-center gap-1">
-                 <div className="w-5 h-5 rounded-full bg-[#1040C0] border-2 border-[#121212] flex items-center justify-center shrink-0">
-                   <div className="w-2 h-2 bg-white rounded-full flex items-center justify-center"><CheckCircle2 className="w-3 h-3 text-[#1040C0]" /></div>
+                 <div className={`w-5 h-5 rounded-full border-2 border-[#121212] flex items-center justify-center shrink-0 ${isLabCleared ? 'bg-[#1040C0]' : 'bg-white'}`}>
+                   {isLabCleared && <CheckCircle2 className="w-3 h-3 text-white" />}
                  </div>
                  <span className="font-bold text-[8px] uppercase tracking-widest">Lab</span>
                </div>
+
                <div className="flex flex-col items-center gap-1">
-                 <div className="w-5 h-5 rounded-full bg-[#F0C020] border-2 border-[#121212] animate-bounce shrink-0" />
-                 <span className="font-bold text-[8px] uppercase tracking-widest text-[#1040C0]">HOD</span>
+                 <div className={`w-5 h-5 rounded-full border-2 border-[#121212] flex items-center justify-center shrink-0 ${isLibCleared ? 'bg-[#1040C0]' : 'bg-white'}`}>
+                   {isLibCleared && <CheckCircle2 className="w-3 h-3 text-white" />}
+                 </div>
+                 <span className="font-bold text-[8px] uppercase tracking-widest">Library</span>
                </div>
+
                <div className="flex flex-col items-center gap-1">
-                 <div className="w-5 h-5 rounded-full bg-[#E0E0E0] border-2 border-[#121212] shrink-0" />
-                 <span className="font-bold text-[8px] uppercase tracking-widest opacity-50">Princip</span>
+                 <div className={`w-5 h-5 rounded-full border-2 border-[#121212] flex items-center justify-center shrink-0 ${isHodCleared ? 'bg-[#1040C0]' : 'bg-white'}`}>
+                   {isHodCleared && <CheckCircle2 className="w-3 h-3 text-white" />}
+                 </div>
+                 <span className="font-bold text-[8px] uppercase tracking-widest">HOD</span>
+               </div>
+
+               <div className="flex flex-col items-center gap-1">
+                 <div className={`w-5 h-5 rounded-full border-2 border-[#121212] flex items-center justify-center shrink-0 ${application.status === 'Cleared' ? 'bg-[#10A040]' : 'bg-white'}`}>
+                   {application.status === 'Cleared' && <CheckCircle2 className="w-3 h-3 text-white" />}
+                 </div>
+                 <span className="font-bold text-[8px] uppercase tracking-widest">Prin</span>
                </div>
             </div>
          </div>
@@ -176,7 +210,7 @@ export function ReviewApp() {
                            {isDecided && doc.isVerified && <CheckCircle2 className="w-5 h-5 text-[#1040C0]" />}
                         </div>
                         <p className="font-black tracking-tight line-clamp-1 mb-1">{doc.name}</p>
-                        <p className="font-mono text-xs opacity-50">{doc.size} • Uploaded {format(new Date(doc.date), 'MMM d')}</p>
+                        <p className="font-mono text-xs opacity-50">{doc.size} • Uploaded {safeDate(doc.date)}</p>
                      </div>
                    ))}
                  </div>
@@ -249,9 +283,15 @@ export function ReviewApp() {
                       </button>
                       <button 
                         onClick={() => handleDecision('approve')}
-                        className="flex-1 py-4 border-4 border-[#1040C0] bg-[#1040C0] text-white font-black uppercase tracking-widest hover:bg-white hover:text-[#1040C0] hover:shadow-[4px_4px_0px_0px_#1040C0] transition-colors"
+                        disabled={!canApprove}
+                        className={`flex-1 py-4 border-4 font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-3 ${
+                          canApprove 
+                          ? 'border-[#1040C0] bg-[#1040C0] text-white hover:bg-white hover:text-[#1040C0] hover:shadow-[4px_4px_0px_0px_#1040C0]' 
+                          : 'border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed opacity-70'
+                        }`}
                       >
-                        Approve Clearance
+                        {!canApprove && <Lock className="w-4 h-4" />}
+                        {canApprove ? 'Approve Clearance' : `Waiting for ${blockingDept}`}
                       </button>
                    </div>
                 </div>
@@ -261,7 +301,7 @@ export function ReviewApp() {
                 <CheckCircle2 className="w-16 h-16 text-[#F0C020] mx-auto mb-4" />
                 <h2 className="font-black text-2xl uppercase tracking-tight mb-2">Decision Recorded</h2>
                 <p className="font-medium opacity-80 text-sm mb-6">
-                  This application was marked as <strong className="text-[#F0C020]">{application.status}</strong> on {application.decisionDate && format(new Date(application.decisionDate), 'PPP')}.
+                  This application was marked as <strong className="text-[#F0C020]">{application.status}</strong> on {application.decisionDate && safeDate(application.decisionDate)}.
                 </p>
                 {application.decisionComment && (
                    <div className="bg-white/10 p-4 border-l-4 border-[#F0C020] text-left">
@@ -284,7 +324,7 @@ export function ReviewApp() {
                       <div className="absolute -left-[31px] top-1 w-3 h-3 border-2 border-[#121212] bg-[#121212]" />
                       <div className="flex justify-between items-start mb-1 gap-2">
                          <span className="font-black uppercase tracking-tight text-sm">{hist.action}</span>
-                         <span className="font-mono text-[10px] opacity-50 shrink-0">{format(new Date(hist.date), 'MMM d, h:mm a')}</span>
+                         <span className="font-mono text-[10px] opacity-50 shrink-0">{safeDate(hist.date)}</span>
                       </div>
                       <p className="font-bold text-[10px] uppercase tracking-widest opacity-60 mb-2">{hist.actor} • {hist.role}</p>
                       {hist.comment && (

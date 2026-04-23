@@ -6,7 +6,7 @@ const login = async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ message: 'Email and password are required.' });
+    return res.status(400).json({ error: 'Email and password are required.' });
   }
 
   try {
@@ -17,18 +17,18 @@ const login = async (req, res) => {
     
     if (error || !users || users.length === 0) {
       if (error) console.error('Supabase fetch error:', error);
-      return res.status(401).json({ message: 'Invalid email or password.' });
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     const user = users[0];
 
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
-      return res.status(401).json({ message: 'Invalid email or password.' });
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     if (user.is_blocked) {
-      return res.status(403).json({ message: 'Account suspended. Contact administration.' });
+      return res.status(403).json({ error: 'Account suspended. Contact administration.' });
     }
 
     // Generate JWT token
@@ -49,7 +49,7 @@ const login = async (req, res) => {
 
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 };
 
@@ -61,7 +61,7 @@ const getMe = async (req, res) => {
       .eq('id', req.user.id);
     
     if (error || !users || users.length === 0) {
-      return res.status(404).json({ message: 'User reference lost.' });
+      return res.status(404).json({ error: 'User reference lost.' });
     }
 
     const user = users[0];
@@ -73,21 +73,15 @@ const getMe = async (req, res) => {
     });
   } catch (error) {
     console.error('getMe error:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 };
 
 const register = async (req, res) => {
   const { name, email, password, role, branch, batch, rollNo } = req.body;
   if (!name || !email || !password || !role) {
-     return res.status(400).json({ message: 'Missing required registration parameters.' });
+     return res.status(400).json({ error: 'Missing required registration parameters.' });
   }
-
-  // DB check constraint allows: 'student' | 'admin' | 'hod' | 'principal' | 'lab-incharge'
-  // For authorities, the role payload IS already the valid DB role value.
-  // sub_role mirrors role for use in JWT and ProtectedRoute matching.
-  const dbRole = role;  // 'student', 'hod', 'principal', 'lab-incharge', 'admin'
-  const dbSubRole = role; // same — ProtectedRoute checks sub_role
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -95,17 +89,17 @@ const register = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role: dbRole,
+      role: role,
       branch: branch || null,
       batch: batch || null,
       roll_number: rollNo || null,
-      sub_role: dbSubRole,
+      sub_role: role,
       is_blocked: false
     }]).select('*');
 
     if (error || !data) {
       console.error('Register DB error:', error);
-      return res.status(400).json({ message: 'Registration failed. Email may already exist.', details: error?.message });
+      return res.status(400).json({ error: 'Registration failed. Email may already exist.', details: error?.message });
     }
 
     // Automatically create Application row if Student is registered
@@ -113,7 +107,7 @@ const register = async (req, res) => {
       await supabase.from('applications').insert([{
         user_id: data[0].id,
         status: 'submitted',
-        current_stage: 'library',
+        current_stage: 'lab-incharge',
         cert_status: 'Not Ready'
       }]);
     }
@@ -123,7 +117,7 @@ const register = async (req, res) => {
     res.status(200).json({ success: true, user });
   } catch (err) {
     console.error('Register error:', err);
-    res.status(500).json({ message: 'Internal Server Sync Failure during Registration.' });
+    res.status(500).json({ error: 'Internal Server Sync Failure during Registration.' });
   }
 };
 

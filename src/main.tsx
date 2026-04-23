@@ -9,7 +9,9 @@
   // ── Global axios configuration ─────────────────────────────────────────────
   // In dev, point to local backend. In production, point to Render.
   const isLocal = import.meta.env.DEV;
-  axios.defaults.baseURL = isLocal ? 'http://localhost:5006' : 'https://nexus-oa2l.onrender.com';
+  const baseURL = isLocal ? 'http://localhost:5006' : 'https://nexus-oa2l.onrender.com';
+  console.log('[NEXUS DEBUG] API BaseURL:', baseURL, { isLocal });
+  axios.defaults.baseURL = baseURL;
 
 
   axios.interceptors.request.use((config) => {

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api';
 
 export interface User {
   id: string;
@@ -31,15 +31,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const restoreSession = async () => {
       const token = localStorage.getItem('nexus_token');
-      if (token) {
+      const savedUser = localStorage.getItem('nexus_user');
+      
+      if (token && savedUser) {
         try {
-          const response = await axios.get('/api/auth/me', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          // Optimistically set user from localStorage to prevent UI flash
+          setCurrentUser(JSON.parse(savedUser));
+          
+          // Verify with backend in the background
+          const response = await api.get('/api/auth/me');
           setCurrentUser(response.data.user);
+          localStorage.setItem('nexus_user', JSON.stringify(response.data.user));
         } catch (error) {
           // Token invalid or expired
-          localStorage.removeItem('nexus_token');
+          logout();
         }
       }
       setIsLoading(false);
@@ -50,23 +55,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await axios.post('/api/auth/login', { email, password });
+      const response = await api.post('/api/auth/login', { email, password });
       const { token, user } = response.data;
       
       localStorage.setItem('nexus_token', token);
+      localStorage.setItem('nexus_user', JSON.stringify(user));
       setCurrentUser(user);
       
       return { success: true, user };
     } catch (error: any) {
       return { 
         success: false, 
-        error: error.response?.data?.message || 'Invalid email or password. Please check your credentials.' 
+        error: error.response?.data?.error || 'Invalid email or password. Please check your credentials.' 
       };
     }
   };
 
   const logout = () => {
     localStorage.removeItem('nexus_token');
+    localStorage.removeItem('nexus_user');
     setCurrentUser(null);
   };
 

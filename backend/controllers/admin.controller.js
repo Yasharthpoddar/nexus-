@@ -162,20 +162,51 @@ const getAdminSync = async (req, res) => {
 };
 
 const uploadCsv = async (req, res) => {
-  const { department, filename } = req.body;
-  // Simulate 1.5s visual network parsing delay
-  setTimeout(() => {
-    const newEntry = {
-      id: Math.random().toString(36).substring(7),
-      timestamp: new Date().toISOString(),
-      filename: filename || 'unknown_upload.csv',
-      department: department || 'General',
-      rows: Math.floor(Math.random() * 500) + 50,
-      flagged: Math.floor(Math.random() * 20)
-    };
-    mockCsvHistory.unshift(newEntry);
-    res.status(200).json({ success: true, processed: newEntry });
-  }, 1500);
+  const { department, csvData } = req.body;
+  const adminId = req.user.id;
+
+  try {
+    if (!csvData || !Array.isArray(csvData)) {
+      return res.status(400).json({ error: 'Invalid CSV data format.' });
+    }
+
+    const results = { processed: 0, skipped: 0, errors: [] };
+    
+    for (const row of csvData) {
+      try {
+        const { rollNo, amount, reason } = row;
+        const { data: student } = await supabase.from('users').select('id').eq('roll_number', rollNo).single();
+        if (!student) {
+          results.skipped++;
+          results.errors.push(`Roll No ${rollNo} not found.`);
+          continue;
+        }
+
+        const { data: app } = await supabase.from('applications').select('id').eq('user_id', student.id).single();
+        if (!app) {
+          results.skipped++;
+          results.errors.push(`No active application for ${rollNo}.`);
+          continue;
+        }
+
+        await supabase.from('dues_flags').insert([{
+          application_id: app.id,
+          user_id: student.id,
+          department: department || 'General',
+          amount: parseFloat(amount),
+          reason: reason || 'External Fine',
+          is_paid: false
+        }]);
+        results.processed++;
+      } catch (e) {
+        results.skipped++;
+        results.errors.push(`Row error: ${e.message}`);
+      }
+    }
+    res.status(200).json({ success: true, results });
+  } catch (err) {
+    res.status(500).json({ error: 'CSV Processing Engine Failure.' });
+  }
 };
 
 const blockStudent = async (req, res) => {
@@ -183,29 +214,27 @@ const blockStudent = async (req, res) => {
   try {
     await supabase.from('users').update({ is_blocked: blocked }).eq('id', id);
     res.status(200).json({ success: true });
-  } catch (err) { res.status(500).send('Error') }
+  } catch (err) { res.status(500).json({ error: 'Failed to update block status.' }) }
 };
 
 const overrideDept = async (req, res) => {
   const { studentId, deptName, status } = req.body;
   try {
     const { data: apps } = await supabase.from('applications').select('id').eq('user_id', studentId);
-    if (!apps || apps.length === 0) return res.status(404).send('No app');
+    if (!apps || apps.length === 0) return res.status(404).json({ error: 'No active application found.' });
     const appId = apps[0].id;
 
-    // Check if dept exists
-    const { data: existing } = await supabase.from('department_status')
-      .select('*').eq('application_id', appId).eq('department', deptName);
+    const { data: existing } = await supabase.from('department_status').select('*').eq('application_id', appId).eq('department', deptName);
 
     if (existing && existing.length > 0) {
-      await supabase.from('department_status').update({ status, flag_reason: 'Admin Override' }).eq('id', existing[0].id);
+      await supabase.from('department_status').update({ status, flag_reason: 'Admin Global Override' }).eq('id', existing[0].id);
     } else {
       await supabase.from('department_status').insert([{
         application_id: appId, department: deptName, status, flag_reason: 'Admin Global Force Creation'
       }]);
     }
     res.status(200).json({ success: true });
-  } catch (err) { res.status(500).send('Error') }
+  } catch (err) { res.status(500).json({ error: 'Override failed.' }) }
 };
 
 const updateNotes = async (req, res) => {
@@ -216,22 +245,27 @@ const updateNotes = async (req, res) => {
       await supabase.from('applications').update({ admin_notes: notes }).eq('id', apps[0].id);
     }
     res.status(200).json({ success: true });
-  } catch (err) { res.status(500).send('Error') }
+  } catch (err) { res.status(500).json({ error: 'Failed to update notes.' }) }
 };
 
 const forceIssueCert = async (req, res) => {
   const { studentId } = req.body;
   try {
     const { data: apps } = await supabase.from('applications').select('id').eq('user_id', studentId);
-    if (!apps || apps.length === 0) return res.status(404).send('No app');
+    if (!apps || apps.length === 0) return res.status(404).json({ error: 'No application found.' });
     
-    const hash = crypto.randomBytes(16).toString('hex');
+    const { generateFullCertificatePackage } = require('../services/pdfGenerator');
+    const packageResult = await generateFullCertificatePackage(studentId);
+
     await supabase.from('applications').update({
-       status: 'Approved', current_stage: 'completed', cert_status: 'Ready', admin_notes: `Admin Forced Cert: ${hash}`
+       status: 'cleared', current_stage: 'completed', cert_status: 'Ready', admin_notes: `Admin Forced Clearance. Cert: ${packageResult.certificateId}`
     }).eq('id', apps[0].id);
     
-    res.status(200).json({ success: true });
-  } catch (err) { res.status(500).send('Error') }
+    res.status(200).json({ success: true, certificateId: packageResult.certificateId });
+  } catch (err) { 
+    console.error('[Admin/ForceCert]', err);
+    res.status(500).json({ error: 'Certificate generation failed.' });
+  }
 };
 
 const deleteStudent = async (req, res) => {
@@ -295,22 +329,40 @@ const bulkRegisterStudents = async (req, res) => {
             .single();
 
           if (uErr) {
+            console.error(`[bulkRegister] User Error for ${s.email}:`, uErr);
             batchErrors.push({ email: s.email, error: uErr.message });
             continue;
           }
 
           // 3. Application Upsert
-          const { error: aErr } = await supabase
+          const { data: newApp, error: aErr } = await supabase
             .from('applications')
             .upsert({
               user_id: newUser.id,
               status: 'submitted',
-              current_stage: 'library',
+              current_stage: 'Library',
               cert_status: 'Not Ready'
-            }, { onConflict: 'user_id' });
+            }, { onConflict: 'user_id' })
+            .select('id')
+            .single();
 
           if (aErr) {
+            console.error(`[bulkRegister] App Error for ${s.email}:`, aErr);
             batchErrors.push({ email: s.email, error: `App creation failed: ${aErr.message}` });
+          } else if (newApp) {
+            // 4. Initialize Department Statuses (Audit DB-4.5)
+            const departments = ['Library', 'Laboratory', 'Accounts', 'HOD', 'Principal'];
+            const statusEntries = departments.map(dept => ({
+              application_id: newApp.id,
+              department: dept,
+              status: 'Pending'
+            }));
+
+            const { error: dsErr } = await supabase
+              .from('department_status')
+              .upsert(statusEntries, { onConflict: 'application_id,department' });
+
+            if (dsErr) console.warn(`[bulkRegister] Dept Status warn for ${s.email}:`, dsErr.message);
           }
 
           batchCreated.push(newUser.id);

@@ -9,9 +9,11 @@ const supabase   = require('../db/config');
  * @returns {{ inserted: number, flagged: number, errors: number, errorDetails: string[] }}
  */
 async function parseAndInsertDues(buffer, department) {
-  // Parse the CSV — support BOM, trim whitespace, accept multiple column name variants
   let records;
   try {
+    const csvContent = buffer.toString('utf8');
+    console.log('[Parser] First 100 chars of CSV:', csvContent.substring(0, 100));
+    
     records = parse(buffer, {
       columns: true,
       skip_empty_lines: true,
@@ -19,50 +21,45 @@ async function parseAndInsertDues(buffer, department) {
       bom: true,
     });
   } catch (parseErr) {
-    throw new Error(`CSV parse error: ${parseErr.message}`);
+    throw new Error(`CSV format error: ${parseErr.message}`);
   }
 
-  let inserted   = 0;
-  let flagged    = 0;
+  let inserted = 0;
+  let flagged = 0;
   const rowErrors = [];
 
-  for (const record of records) {
+  if (records.length === 0) {
+     throw new Error("CSV file appears to be empty or has no data rows.");
+  }
+
+  // Debug: Log the detected headers from the first record
+  console.log('[Parser] Detected Headers:', Object.keys(records[0]));
+
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    const rowNum = i + 2; // +1 for 0-index, +1 for header row
     try {
-      // Accept multiple header variants
       const rollNo = (
-        record['roll_number'] ||
-        record['Roll No']     ||
-        record['ROLL NO']     ||
-        record['rollNo']      ||
-        record['Roll Number'] ||
-        record['roll no']     ||
-        ''
+        record['roll_number'] || record['Roll No'] || record['ROLL NO'] ||
+        record['rollNo'] || record['Roll Number'] || record['roll no'] || ''
       ).trim();
 
-      const name = (
-        record['name'] || record['Name'] || record['NAME'] || ''
-      ).trim();
-
-      const amount = parseFloat(
-        record['amount_due']  ||
-        record['Amount Due']  ||
-        record['AMOUNT DUE']  ||
-        record['amount']      ||
-        record['Amount']      ||
-        '0'
-      ) || 0;
-
-      const reason = (
-        record['reason'] || record['Reason'] || record['REASON'] ||
-        record['description'] || record['Description'] || ''
+      const amountStr = (
+        record['amount_due'] || record['Amount Due'] || record['AMOUNT DUE'] ||
+        record['amount'] || record['Amount'] || ''
       ).trim();
 
       if (!rollNo) {
-        rowErrors.push(`Row missing roll_number: ${JSON.stringify(record)}`);
+        rowErrors.push(`Row ${rowNum}: Missing Roll Number column.`);
+        continue;
+      }
+      if (!amountStr) {
+        rowErrors.push(`Row ${rowNum}: Missing Amount Due column for student ${rollNo}.`);
         continue;
       }
 
-      // Find the student by roll number
+      const amount = parseFloat(amountStr) || 0;
+
       const { data: users, error: userErr } = await supabase
         .from('users')
         .select('id')
@@ -70,42 +67,42 @@ async function parseAndInsertDues(buffer, department) {
         .eq('role', 'student')
         .limit(1);
 
-      if (userErr || !users || users.length === 0) {
-        rowErrors.push(`Student not found for roll_number: ${rollNo}`);
+      if (userErr) {
+        rowErrors.push(`Row ${rowNum}: Database error checking student ${rollNo}: ${userErr.message}`);
+        continue;
+      }
+
+      if (!users || users.length === 0) {
+        rowErrors.push(`Row ${rowNum}: Student with Roll No "${rollNo}" not found in database.`);
         continue;
       }
 
       const studentId = users[0].id;
+      const reason = (record['reason'] || record['Reason'] || record['REASON'] || record['description'] || '').trim();
 
-      // Insert dues_flag record
       const { error: insertErr } = await supabase
         .from('dues_flags')
         .insert([{
-          user_id:    studentId,
+          user_id: studentId,
           department: department,
-          amount:     amount,
-          reason:     reason || `${department} dues`,
-          is_paid:    false,
+          amount: amount,
+          reason: reason || `${department} dues`,
+          is_paid: false,
         }]);
 
       if (insertErr) {
-        rowErrors.push(`DB insert failed for ${rollNo}: ${insertErr.message}`);
+        rowErrors.push(`Row ${rowNum}: Failed to flag ${rollNo}: ${insertErr.message}`);
         continue;
       }
 
       inserted++;
       flagged++;
     } catch (rowErr) {
-      rowErrors.push(`Error on row ${JSON.stringify(record)}: ${rowErr.message}`);
+      rowErrors.push(`Row ${rowNum}: Unexpected error: ${rowErr.message}`);
     }
   }
 
-  return {
-    inserted,
-    flagged,
-    errors: rowErrors.length,
-    errorDetails: rowErrors,
-  };
+  return { inserted, flagged, errors: rowErrors.length, errorDetails: rowErrors };
 }
 
 module.exports = { parseAndInsertDues };

@@ -259,15 +259,23 @@ const resubmitDocument = async (req, res) => {
 // GET /api/documents/mine
 const getMyDocuments = async (req, res) => {
   const userId = req.user.id;
+  console.log('[DEBUG] getMyDocuments Start:', { userId });
 
   try {
     // Get student's application
-    const { data: apps } = await supabase
+    const { data: apps, error: appError } = await supabase
       .from('applications')
       .select('id')
       .eq('user_id', userId)
       .order('submitted_at', { ascending: false })
       .limit(1);
+
+    if (appError) {
+      console.error('[DEBUG] getMyDocuments appError:', appError);
+      throw appError;
+    }
+    
+    console.log('[DEBUG] getMyDocuments found apps:', apps?.length);
 
     if (!apps || apps.length === 0) {
       return res.status(200).json({ success: true, documents: [] });
@@ -275,6 +283,7 @@ const getMyDocuments = async (req, res) => {
     const applicationId = apps[0].id;
 
     // Fetch all documents with verification history and type info
+    console.log('[DEBUG] getMyDocuments Fetching documents for appId:', applicationId);
     const { data, error } = await supabase
       .from('documents')
       .select(`
@@ -292,7 +301,12 @@ const getMyDocuments = async (req, res) => {
       .eq('application_id', applicationId)
       .order('date', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[DEBUG] getMyDocuments docsQuery error:', error);
+      throw error;
+    }
+    
+    console.log('[DEBUG] getMyDocuments found docs:', data?.length);
 
     // Enrich each document with computed progress
     const enriched = await Promise.all((data || []).map(async (doc) => {

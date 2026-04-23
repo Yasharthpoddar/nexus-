@@ -76,22 +76,34 @@ const approveApp = async (req, res) => {
   const adminId = req.user.id;
 
   try {
+    // Audit H1: Strict Sequence Guardrail
+    const { data: depts } = await supabase
+      .from('department_status')
+      .select('department, status')
+      .eq('application_id', appId)
+      .in('department', ['Library', 'Laboratory', 'HOD']);
+
+    const allClear = depts?.every(d => d.status === 'Cleared') && depts?.length === 3;
+    if (!allClear) {
+      return res.status(403).json({ error: 'Sequence Violation: HOD, Library, and Laboratory must all be Cleared before final Principal approval.' });
+    }
+
     await supabase.from('department_status')
       .update({ status: 'Cleared', flag_reason: comment || 'Final Principal clearance granted.', actioned_by: adminId, last_updated: new Date() })
       .eq('application_id', appId)
       .eq('department', 'Principal');
 
-    // Fetch user constraint
+    // Fetch user id
     const { data: appData } = await supabase.from('applications').select('user_id').eq('id', appId).single();
     if (!appData) throw new Error("App not found");
     
-    // Generate the full certificate package synchronously on approval!
+    // Audit H3: Generate full certificate package
     const packageResult = await generateFullCertificatePackage(appData.user_id);
 
     await supabase.from('applications')
       .update({
         current_stage: 'completed',
-        status: 'Approved',
+        status: 'cleared', // Audit H3: use 'cleared'
         cert_status: 'Ready',
         admin_notes: `Cert: ${packageResult.certificateId}`
       })
@@ -99,18 +111,22 @@ const approveApp = async (req, res) => {
 
     await supabase.from('application_history').insert([{
       application_id: appId, actor: adminId, role: 'principal', action: 'approved',
-      comment: `Principal Approved. Cert: ${packageResult.certificateId}`
+      comment: `Final Clearance Granted. Cert: ${packageResult.certificateId}`
     }]);
 
     await supabase.from('notifications').insert([{
-      to_role: 'student', application_id: appId,
-      message: JSON.stringify({ type: 'approval', title: 'Graduation Approved', description: 'The Principal has approved your application. Your graduation certificate is automatically generated and available in your Digital Locker.' }),
+      to_role: 'student', 
+      user_id: appData.user_id,
+      application_id: appId,
+      title: 'Graduation Cleared', 
+      message: 'The Principal has granted final clearance. Your graduation certificate is now available in your Digital Locker.',
       is_read: false
     }]);
 
     res.status(200).json({ success: true, certificateId: packageResult.certificateId });
   } catch (err) {
-    res.status(500).json({ message: 'Error mapping principal approval' });
+    console.error('[principal/approve]', err);
+    res.status(500).json({ error: 'Error mapping principal approval' });
   }
 };
 
@@ -120,18 +136,18 @@ const flagApp = async (req, res) => {
 
   try {
     await supabase.from('department_status')
-      .update({ status: 'Action Required', flag_reason: comment, actioned_by: adminId, last_updated: new Date() })
+      .update({ status: 'Blocked', flag_reason: comment, actioned_by: adminId, last_updated: new Date() })
       .eq('application_id', appId)
       .eq('department', 'Principal');
 
     await supabase.from('application_history').insert([{
       application_id: appId, actor: adminId, role: 'principal', action: 'flagged',
-      comment: `Principal Flagged: ${comment}`
+      comment: `Principal Blocked: ${comment}`
     }]);
 
     res.status(200).json({ success: true });
   } catch (err) {
-    res.status(500).json({ message: 'Error flagging application' });
+    res.status(500).json({ error: 'Error flagging application' });
   }
 };
 
@@ -147,7 +163,7 @@ const undoDecision = async (req, res) => {
       .eq('id', appId);
     res.status(200).json({ success: true });
   } catch (e) {
-    res.status(500).json({ message: 'Err' });
+    res.status(500).json({ error: 'Internal Error' });
   }
 };
 

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import axios from 'axios';
+import api from '../api';
 import { useAuth } from './AuthContext';
+import { safeDate } from '../utils/formatters';
 
 export type UserProfile = {
   name: string;
@@ -81,7 +82,7 @@ export function NexusProvider({ children }: { children: ReactNode }) {
   const { currentUser } = useAuth();
   
   const [profile, setProfile] = useState<UserProfile>({
-    name: 'Student', rollNo: 'N/A', batch: '2021–2025', branch: 'Computer Science', avatar: 'S'
+    name: 'Student', rollNo: 'N/A', batch: '2021-2025', branch: 'Computer Science', avatar: 'S'
   });
   const [application, setApplication] = useState<any>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -91,6 +92,7 @@ export function NexusProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
 
+
   const fetchSyncData = async () => {
     if (!currentUser || currentUser.role !== 'student') {
       setLoading(false);
@@ -98,14 +100,17 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const token = localStorage.getItem('nexus_token');
-      const { data } = await axios.get('/api/student/sync', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { data } = await api.get('http://127.0.0.1:5006/api/applications/mine');
       
-      const resData = data.data;
+      const appData = data.application;
 
-      // Map raw backend schema to frontend structural interface
+      if (!appData) {
+        setApplication(null);
+        setDepartments([]);
+        setLoading(false);
+        return;
+      }
+
       setProfile({
         name: currentUser.name,
         rollNo: currentUser.roll_number || 'N/A',
@@ -114,89 +119,69 @@ export function NexusProvider({ children }: { children: ReactNode }) {
         avatar: currentUser.name.substring(0, 2).toUpperCase()
       });
 
-      setApplication(resData.application);
-
-      const mapDeptId = (name: string) => {
-        if (name.includes('Libra')) return 'lib';
-        if (name.includes('Lab')) return 'lab';
-        if (name.includes('Acc')) return 'acc';
-        if (name.includes('HOD')) return 'hod';
-        if (name.includes('Prin')) return 'prin';
-        if (name.includes('Sport')) return 'spo';
-        if (name.includes('Hostel')) return 'hos';
-        return name;
-      };
+      setApplication(appData);
 
       setDepartments(
-        resData.departments.map((d: any) => ({
-          id: mapDeptId(d.department),
+        appData.departments.map((d: any) => ({
+          id: d.id,
           name: d.department,
           authority: d.authority,
           status: d.status,
           note: d.flag_reason || '',
-          lastUpdated: d.last_updated || new Date().toISOString()
+          lastUpdated: safeDate(d.last_updated)
         }))
       );
 
       setDocuments(
-        resData.documents.map((d: any) => ({
+        appData.documents.map((d: any) => ({
           id: d.id,
           name: d.name,
           type: d.doc_type,
-          size: '1.2 MB', // Mocking size
-          date: new Date(d.date).toLocaleDateString(),
+          size: '—',
+          date: safeDate(d.created_at),
           status: d.status
         }))
       );
 
+      setDues(
+        appData.dueFlags.map((d: any) => ({
+          id: d.id,
+          department: d.department,
+          reason: d.reason,
+          amount: Number(d.amount),
+          dueDate: safeDate(d.created_at)
+        }))
+      );
+
+      setPayments(
+        appData.payments.map((p: any) => ({
+          id: p.id,
+          department: p.department,
+          amount: Number(p.amount),
+          date: safeDate(p.paid_at),
+          receiptNo: p.receipt_no,
+          status: p.status,
+          type: p.department.toLowerCase().includes('library') ? 'fine' : 'repair'
+        }))
+      );
+
       setNotifications(
-        resData.notifications.map((n: any) => {
-          // Notifications can be either legacy JSON blobs or new plain-text pipeline messages.
-          // Always try JSON first, fall back to treating the message as a plain string.
-          let payload: { type?: string; title?: string; description?: string } = {};
+        (appData.notifications || []).map((n: any) => {
+          let payload: any = {};
           try {
-            const parsed = JSON.parse(n.message);
-            // Confirm it's actually a notification object, not a random string
-            if (typeof parsed === 'object' && parsed !== null) {
-              payload = parsed;
-            } else {
-              payload = { type: 'system', title: 'Notification', description: String(parsed) };
-            }
+            payload = JSON.parse(n.message);
           } catch {
-            // Plain string message — use it as the description directly
-            payload = { type: 'system', title: 'Notification', description: n.message || '' };
+            payload = { type: 'system', title: 'Notification', description: n.message };
           }
           return {
             id: n.id,
             type: payload.type || 'system',
             title: payload.title || 'Notification',
-            description: payload.description || n.message || '',
-            time: n.created_at ? new Date(n.created_at).toLocaleDateString() : 'Just now',
+            description: payload.description || n.message,
+            time: safeDate(n.created_at),
             read: n.is_read
           };
         })
-      );
-
-      setDues(
-        resData.dues.filter((d: any) => !d.is_paid).map((d: any) => ({
-          id: d.id,
-          department: d.department,
-          reason: d.reason,
-          amount: d.amount,
-          dueDate: new Date().toLocaleDateString()
-        }))
-      );
-
-      setPayments(
-        resData.payments.map((p: any) => ({
-          id: p.id,
-          department: p.department,
-          amount: p.amount,
-          date: new Date(p.paid_at).toLocaleString(),
-          receiptNo: p.receipt_no,
-          status: p.status,
-          type: p.department.toLowerCase().includes('library') ? 'fine' : 'repair'
-        }))
       );
 
     } catch (err) {
@@ -216,32 +201,29 @@ export function NexusProvider({ children }: { children: ReactNode }) {
   };
 
   const markNotificationRead = async (id: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/student/notifications/read', { notifId: id }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post('/api/student/notifications/read', { notifId: id });
     fetchSyncData();
   };
   
   const markAllNotificationsRead = async () => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/student/notifications/read-all', {}, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post('/api/student/notifications/read-all');
     fetchSyncData();
   };
 
   const payDue = async (id: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/student/pay', { dueId: id }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post('/api/student/pay', { dueId: id });
     fetchSyncData();
   };
 
   const uploadDocument = async (doc: Document) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/student/document', { name: doc.name, doc_type: doc.type, size: doc.size }, { headers: { Authorization: `Bearer ${token}` }});
+    // This is a legacy method, DocumentVault uses /api/documents/upload
+    await api.post('/api/documents/upload', { name: doc.name, doc_type_code: doc.type });
     fetchSyncData();
   };
 
   const deleteDocument = async (id: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.delete(`/api/student/document/${id}`, { headers: { Authorization: `Bearer ${token}` }});
+    // Legacy / Internal cleanup
+    await api.delete(`/api/documents/${id}`);
     fetchSyncData();
   };
 

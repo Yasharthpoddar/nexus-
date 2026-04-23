@@ -11,6 +11,7 @@ import {
   Paperclip,
   Flame
 } from 'lucide-react';
+import { safeDate, safeID } from '../../utils/formatters';
 
 export function MyApplication() {
   const { profile, departments, application, notifications, documents, dues } = useNexus();
@@ -18,39 +19,41 @@ export function MyApplication() {
   const [respondModal, setRespondModal] = useState<Department | null>(null);
 
   // Derive global application states
-  const labStatus = departments.find(d => d.id === 'lab')?.status;
-  const hodStatus = departments.find(d => d.id === 'hod')?.status;
+  const libStatus  = departments.find(d => d.id === 'lib')?.status;
+  const labStatus  = departments.find(d => d.id === 'lab')?.status;
+  const hodStatus  = departments.find(d => d.id === 'hod')?.status;
   const prinStatus = departments.find(d => d.id === 'prin')?.status;
-
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
 
   const steps = [
     { 
-      label: 'Student Submitted', 
+      label: 'Submitted', 
       status: application ? 'Completed' : 'Pending', 
-      date: formatDate(application?.created_at), 
+      date: safeDate(application?.created_at), 
       person: profile.name 
     },
     { 
-      label: 'Lab In-charge', 
+      label: 'Laboratory', 
       status: labStatus === 'Cleared' ? 'Completed' : application ? 'In Progress' : 'Pending', 
-      date: labStatus === 'Cleared' ? formatDate(departments.find(d => d.id === 'lab')?.lastUpdated) : '-', 
-      person: departments.find(d => d.id === 'lab')?.authority || 'Lab Authority' 
+      date: labStatus === 'Cleared' ? safeDate(departments.find(d => d.id === 'lab')?.lastUpdated) : '-', 
+      person: 'Lab Authority' 
+    },
+    { 
+      label: 'Library', 
+      status: libStatus === 'Cleared' ? 'Completed' : labStatus === 'Cleared' ? 'In Progress' : 'Pending', 
+      date: libStatus === 'Cleared' ? safeDate(departments.find(d => d.id === 'lib')?.lastUpdated) : '-', 
+      person: 'Librarian' 
     },
     { 
       label: 'HOD', 
-      status: hodStatus === 'Cleared' ? 'Completed' : labStatus === 'Cleared' ? 'In Progress' : 'Pending', 
-      date: hodStatus === 'Cleared' ? formatDate(departments.find(d => d.id === 'hod')?.lastUpdated) : '-', 
-      person: departments.find(d => d.id === 'hod')?.authority || 'HOD' 
+      status: hodStatus === 'Cleared' ? 'Completed' : libStatus === 'Cleared' ? 'In Progress' : 'Pending', 
+      date: hodStatus === 'Cleared' ? safeDate(departments.find(d => d.id === 'hod')?.lastUpdated) : '-', 
+      person: 'Dept. Head' 
     },
     { 
       label: 'Principal', 
       status: prinStatus === 'Cleared' ? 'Completed' : hodStatus === 'Cleared' ? 'In Progress' : 'Pending', 
-      date: prinStatus === 'Cleared' ? formatDate(departments.find(d => d.id === 'prin')?.lastUpdated) : '-', 
-      person: departments.find(d => d.id === 'prin')?.authority || 'Principal' 
+      date: prinStatus === 'Cleared' ? safeDate(departments.find(d => d.id === 'prin')?.lastUpdated) : '-', 
+      person: 'Principal' 
     },
   ];
 
@@ -74,7 +77,7 @@ export function MyApplication() {
       <div>
         <h1 className="font-black text-3xl md:text-5xl uppercase tracking-tight mb-2">Track Application</h1>
         <p className="text-lg font-medium opacity-80">
-          Application ID: {application?.id ? `NX-${application.id.replace(/-/g, '').slice(0, 6).toUpperCase()}` : 'NX-PENDING'}
+          Application ID: {application?.id ? `NX-${safeID(application.id)}` : 'NX-PENDING'}
         </p>
       </div>
 
@@ -99,7 +102,7 @@ export function MyApplication() {
                   <p className={`font-black uppercase tracking-tight text-sm md:text-base leading-tight mb-1 ${step.status === 'Completed' ? 'text-[#1040C0]' : step.status === 'In Progress' ? 'text-[#121212]' : 'text-gray-400'}`}>{step.label}</p>
                   <p className="font-bold text-[10px] uppercase tracking-widest opacity-60 bg-[#F0F0F0] inline-block px-1 mb-1">{step.status}</p>
                   <p className="text-sm font-medium opacity-80">{step.person}</p>
-                  <p className="text-xs font-bold text-gray-500 mt-0.5">{step.date !== 'Invalid Date' ? step.date : '-'}</p>
+                  <p className="text-xs font-bold text-gray-500 mt-0.5">{step.date}</p>
                 </div>
               </div>
             ))}
@@ -410,8 +413,7 @@ export function MyApplication() {
               return (
                 <div key={log.id} className="flex gap-4 items-start">
                   <div className="text-right w-24 md:w-32 shrink-0 pt-1">
-                    <p className="font-bold text-xs uppercase tracking-widest opacity-60">{dateStr !== 'Invalid Date' ? dateStr : '-'}</p>
-                    <p className="font-bold text-[10px] text-gray-500 uppercase">{timeStr}</p>
+                    <p className="font-bold text-xs uppercase tracking-widest opacity-60">{safeDate(log.time)}</p>
                   </div>
                   <div className="w-2 rounded-full border-2 border-[#121212] bg-[#F0F0F0] mt-1.5 h-2 shrink-0 relative">
                     {i < Math.min(notifications.length, 5) - 1 && <div className="absolute top-2 left-1/2 -translate-x-1/2 w-0.5 h-12 bg-[#E0E0E0] -z-10" />}

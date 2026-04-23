@@ -79,8 +79,30 @@ const approveStudent = async (req, res) => {
   const adminId = req.user.id;
 
   try {
+    // Audit F1: Check if all documents for this application are verified
+    const { data: docs } = await supabase
+      .from('documents')
+      .select('status')
+      .eq('application_id', appId);
+
+    const allVerified = docs?.every(d => d.status === 'Verified');
+    if (!allVerified && (docs?.length || 0) > 0) {
+      return res.status(403).json({ error: 'Cannot approve: Some documents are still pending verification.' });
+    }
+
+    // Audit F3: Sync equipment status on approval
+    await supabase.from('equipment_status')
+      .update({ 
+        lab_manual: 'Returned', 
+        equipment_kit: 'Returned', 
+        safety_deposit: 'Returned', 
+        lab_card: 'Returned',
+        updated_at: new Date()
+      })
+      .eq('application_id', appId);
+
     await supabase.from('department_status')
-      .update({ status: 'Cleared', flag_reason: notes, actioned_by: adminId, last_updated: new Date() })
+      .update({ status: 'Cleared', flag_reason: notes || 'Lab documents and equipment verified.', actioned_by: adminId, last_updated: new Date() })
       .eq('application_id', appId)
       .eq('department', 'Laboratory');
 
@@ -89,15 +111,16 @@ const approveStudent = async (req, res) => {
       actor: adminId,
       role: 'lab-incharge',
       action: 'approved',
-      comment: `Approved App ${appId}`
+      comment: `Lab Cleared & Equipment Auto-Returned`
     }]);
 
-    // Push the process up to HOD automatically
+    // Push process to HOD (next stage)
     await supabase.from('applications').update({ current_stage: 'hod' }).eq('id', appId);
 
     res.status(200).json({ success: true });
   } catch (err) {
-    res.status(500).json({ message: 'Error approving' });
+    console.error('[lab/approve]', err);
+    res.status(500).json({ error: 'Internal Server Error during Lab approval.' });
   }
 };
 
@@ -107,7 +130,7 @@ const flagStudent = async (req, res) => {
 
   try {
     await supabase.from('department_status')
-      .update({ status: 'Action Required', flag_reason: notes, actioned_by: adminId, last_updated: new Date() })
+      .update({ status: 'Blocked', flag_reason: notes || comment, actioned_by: adminId, last_updated: new Date() })
       .eq('application_id', appId)
       .eq('department', 'Laboratory');
 
@@ -116,19 +139,21 @@ const flagStudent = async (req, res) => {
       actor: adminId,
       role: 'lab-incharge',
       action: 'flagged',
-      comment: `Flagged App. Reason: ${comment}`
+      comment: `Lab Blocked: ${comment}`
     }]);
 
     await supabase.from('notifications').insert([{
       to_role: 'student',
+      user_id: null,
       application_id: appId,
-      message: JSON.stringify({ type: 'rejection', title: 'Action Required: Laboratory', description: notes }),
+      title: 'Action Required: Laboratory',
+      message: notes || comment,
       is_read: false
     }]);
 
     res.status(200).json({ success: true });
   } catch (err) {
-    res.status(500).json({ message: 'Error flagging' });
+    res.status(500).json({ error: 'Error flagging' });
   }
 };
 

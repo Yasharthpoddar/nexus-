@@ -48,6 +48,7 @@ router.post('/upload-csv', requireAuth, upload.single('file'), async (req, res) 
       inserted: result.inserted,
       flagged:  result.flagged,
       errors:   result.errors,
+      errorDetails: result.errorDetails,
       message:  `Processed ${result.inserted} records. ${result.flagged} students flagged. ${result.errors} rows skipped.`,
     });
   } catch (err) {

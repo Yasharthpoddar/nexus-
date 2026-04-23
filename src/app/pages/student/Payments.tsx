@@ -11,6 +11,8 @@ import {
   ShieldCheck,
   Zap
 } from 'lucide-react';
+import api from '../../api';
+import { safeDate } from '../../utils/formatters';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -42,21 +44,9 @@ export function Payments() {
     setProcessing(true);
 
     try {
-      const token = localStorage.getItem('nexus_token');
-
       // 1. Create order on backend
-      const orderRes = await fetch(`${API_BASE}/api/payment/create-order`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ dueId: due.id }),
-      });
-
-      if (!orderRes.ok) {
-        const err = await orderRes.json().catch(() => ({ error: 'Failed to create order' }));
-        throw new Error(err.error);
-      }
-
-      const order = await orderRes.json();
+      const orderRes = await api.post('/api/payment/create-order', { dueId: due.id });
+      const order = orderRes.data;
       setProcessing(false);
 
       // 2. Open Razorpay checkout
@@ -76,26 +66,21 @@ export function Payments() {
         handler: async (response: any) => {
           setProcessing(true);
           try {
-            const verifyRes = await fetch(`${API_BASE}/api/payment/verify`, {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify({
-                razorpay_order_id:   response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature:  response.razorpay_signature,
-                dueId:               order.dueId,
-              }),
+            const verifyRes = await api.post('/api/payment/verify', {
+              razorpay_order_id:   response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature:  response.razorpay_signature,
+              dueId:               order.dueId,
             });
 
-            const result = await verifyRes.json();
-            if (!verifyRes.ok) throw new Error(result.error || 'Verification failed');
+            const result = verifyRes.data;
 
             // Show success receipt and refresh context
             setSuccessReceipt({
               id:         result.payment?.id || '',
               department: order.department,
               amount:     due.amount,
-              date:       new Date().toLocaleString(),
+              date:       safeDate(new Date()),
               receiptNo:  result.receiptNo,
               status:     'Completed',
               type:       due.department.toLowerCase().includes('library') ? 'fine' : 'repair',
@@ -116,13 +101,9 @@ export function Payments() {
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', async (resp: any) => {
         try {
-          await fetch(`${API_BASE}/api/payment/failed`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({
-              razorpay_order_id: order.orderId,
-              error_description: resp.error?.description || 'Unknown error',
-            }),
+          await api.post('/api/payment/failed', {
+            razorpay_order_id: order.orderId,
+            error_description: resp.error?.description || 'Unknown error',
           });
         } catch (e) {} // silent failed log
         setErrorMsg(`Payment failed: ${resp.error?.description || 'Unknown error'}`);
@@ -290,7 +271,7 @@ export function Payments() {
               <tbody className="font-medium text-sm">
                 {payments.map(payment => (
                   <tr key={payment.id} className="border-b-2 border-[#E0E0E0] hover:bg-[#F0F0F0]">
-                    <td className="p-4 border-r-2 border-[#E0E0E0]">{payment.date}</td>
+                    <td className="p-4 border-r-2 border-[#E0E0E0]">{safeDate(payment.date)}</td>
                     <td className="p-4 font-bold uppercase tracking-tight border-r-2 border-[#E0E0E0]">{payment.department}</td>
                     <td className="p-4 border-r-2 border-[#E0E0E0] font-bold">₹{payment.amount}</td>
                     <td className="p-4 border-r-2 border-[#E0E0E0] uppercase text-xs tracking-wider opacity-70 font-mono">{payment.receiptNo}</td>

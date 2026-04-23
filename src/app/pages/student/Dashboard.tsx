@@ -15,25 +15,37 @@ import {
 import { format } from 'date-fns';
 
 export function Dashboard() {
-  const { profile, departments, notifications, documents } = useNexus();
+  const { profile, departments, notifications, documents, loading } = useNexus();
   const navigate = useNavigate();
   const [selectedDept, setSelectedDept] = useState<Department | null>(null);
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 border-8 border-[#F0F0F0] border-t-[#1040C0] rounded-full animate-spin"></div>
+          <p className="font-black uppercase tracking-widest text-[#121212]">Initializing Nexus...</p>
+        </div>
+      </div>
+    );
+  }
+
   const isActiveApp = departments && departments.length > 0;
-  const clearedCount = isActiveApp ? departments.filter(d => d.status === 'Cleared').length : documents?.filter(d => d.status === 'Verified')?.length || 0;
-  const totalCount = isActiveApp ? departments.length : documents?.length || 0;
-  const unit = isActiveApp ? 'DEPARTMENTS CLEARED' : 'DOCUMENTS VERIFIED';
   
-  // allCleared: only true when a real application exists AND every dept is cleared
-  const allCleared = isActiveApp && departments.length > 0 && departments.every(d => d.status === 'Cleared');
+  // Audit B2: Cleared count calculated exactly as requested
+  const clearedCount = isActiveApp ? departments.filter(d => d.status === 'Cleared').length : 0;
+  const totalCount = isActiveApp ? departments.length : 6; // Default to 6 departments
   const progressPercent = totalCount > 0 ? Math.round((clearedCount / totalCount) * 100) : 0;
+  
+  // Audit B4: Certificate banner only when ALL 6 departments cleared
+  const allCleared = isActiveApp && totalCount === 6 && departments.every(d => d.status === 'Cleared');
 
   const getStatusColor = (status: string) => {
     switch(status) {
-      case 'Cleared': return 'bg-[#1040C0] text-white';
-      case 'Pending': return 'bg-[#F0C020] text-[#121212]';
-      case 'Action Required': return 'bg-[#D02020] text-white';
-      default: return 'bg-[#E0E0E0] text-[#121212]';
+      case 'Cleared': return 'bg-[#10A040] text-white'; // Audit B3: Green
+      case 'Pending': return 'bg-[#F0C020] text-[#121212]'; // Audit B3: Yellow
+      case 'Blocked': return 'bg-[#D02020] text-white'; // Audit B3: Red
+      default: return 'bg-[#E0E0E0] text-[#121212]'; // Audit B3: Gray
     }
   };
 
@@ -142,9 +154,9 @@ export function Dashboard() {
       <div className="bg-white p-6 md:p-8 border-4 border-[#121212] shadow-[4px_4px_0px_0px_#121212]">
         <div className="flex items-center justify-between mb-4">
           <p className="font-black uppercase text-xl md:text-2xl tracking-tight">
-            {clearedCount} of {totalCount} {unit}
+            {clearedCount || 0} of {totalCount || 6} Departments
           </p>
-          <span className="font-black text-3xl text-[#1040C0]">{progressPercent}%</span>
+          <span className="font-black text-3xl text-[#1040C0]">{progressPercent || 0}%</span>
         </div>
         <div className="h-8 md:h-10 w-full bg-[#E0E0E0] border-4 border-[#121212] relative overflow-hidden">
           <div 
@@ -165,15 +177,33 @@ export function Dashboard() {
               Current Status
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {departments.length === 0 && documents.length === 0 && (
-                <div className="col-span-1 md:col-span-2 border-4 border-[#121212] p-6 bg-gray-50 flex items-center justify-center min-h-[140px]">
-                   <p className="font-black uppercase tracking-widest text-[#121212] opacity-50">
-                     No active clearance or documents.
-                   </p>
+              {!isActiveApp && (
+                <div className="col-span-1 md:col-span-2 border-8 border-[#121212] p-10 bg-white shadow-[8px_8px_0px_0px_#121212] flex flex-col items-center justify-center text-center space-y-6">
+                   <div className="w-20 h-20 bg-[#F0F0F0] border-4 border-[#121212] rounded-full flex items-center justify-center">
+                      <FileText className="w-10 h-10 opacity-30" />
+                   </div>
+                   <div>
+                     <h3 className="font-black text-2xl uppercase tracking-tight">No Active Application</h3>
+                     <p className="font-bold opacity-60 uppercase text-xs tracking-widest mt-2">Start your graduation clearance process now</p>
+                   </div>
+                   <button 
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem('nexus_token');
+                        await axios.post('/api/applications/submit', {}, { headers: { Authorization: `Bearer ${token}` } });
+                        window.location.reload();
+                      } catch (err) {
+                        alert('Failed to submit application. Please contact admin.');
+                      }
+                    }}
+                    className="bg-[#1040C0] text-white px-10 py-5 border-4 border-[#121212] font-black uppercase tracking-wider hover:translate-y-[-4px] hover:shadow-[4px_4px_0px_0px_#121212] transition-all"
+                   >
+                     Submit New Application
+                   </button>
                 </div>
               )}
 
-              {departments.map((dept) => (
+              {isActiveApp && departments.map((dept) => (
                 <div 
                   key={`dept-${dept.id}`}
                   onClick={() => setSelectedDept(dept)}

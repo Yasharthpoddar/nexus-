@@ -86,6 +86,18 @@ const approveApp = async (req, res) => {
   const adminId = req.user.id;
 
   try {
+    // Audit G1: Prerequisite Guardrail
+    const { data: prerequisites } = await supabase
+      .from('department_status')
+      .select('department, status')
+      .eq('application_id', appId)
+      .in('department', ['Library', 'Laboratory']);
+
+    const allClear = prerequisites?.every(p => p.status === 'Cleared');
+    if (!allClear) {
+      return res.status(403).json({ error: 'Prerequisite Failure: All previous departments (Library, Laboratory) must be Cleared first.' });
+    }
+
     await supabase.from('department_status')
       .update({ status: 'Cleared', flag_reason: comment || 'Verified backlogs and academic standing.', actioned_by: adminId, last_updated: new Date() })
       .eq('application_id', appId)
@@ -103,7 +115,7 @@ const approveApp = async (req, res) => {
 
     res.status(200).json({ success: true });
   } catch (err) {
-    res.status(500).json({ message: 'Error approving application' });
+    res.status(500).json({ error: 'Error approving application' });
   }
 };
 
@@ -113,7 +125,7 @@ const flagApp = async (req, res) => {
 
   try {
     await supabase.from('department_status')
-      .update({ status: 'Action Required', flag_reason: comment, actioned_by: adminId, last_updated: new Date() })
+      .update({ status: 'Blocked', flag_reason: comment, actioned_by: adminId, last_updated: new Date() })
       .eq('application_id', appId)
       .eq('department', 'HOD');
 
@@ -122,19 +134,21 @@ const flagApp = async (req, res) => {
       actor: adminId,
       role: 'hod',
       action: 'flagged',
-      comment: `HOD Flagged - ${comment}`
+      comment: `HOD Blocked - ${comment}`
     }]);
 
     await supabase.from('notifications').insert([{
       to_role: 'student',
+      user_id: null, // Broadcast to app_id
       application_id: appId,
-      message: JSON.stringify({ type: 'rejection', title: 'Action Required: HOD', description: comment }),
+      title: 'Action Required: HOD',
+      message: comment,
       is_read: false
     }]);
 
     res.status(200).json({ success: true });
   } catch (err) {
-    res.status(500).json({ message: 'Error flagging' });
+    res.status(500).json({ error: 'Error flagging' });
   }
 };
 

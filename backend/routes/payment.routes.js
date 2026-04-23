@@ -84,14 +84,19 @@ router.post('/verify', requireAuth, async (req, res) => {
 
     if (!due) return res.status(404).json({ error: 'Due not found' });
 
-    // 3. Mark due as paid
-    await supabase.from('dues_flags').update({ is_paid: true }).eq('id', dueId);
-
-    // 4. Create payment record and generate receipt
-    const receiptNo = `RCPT-${Math.floor(1000 + Math.random() * 9000)}`;
+    // 3. Mark due as paid and create payment record
+    const year = new Date().getFullYear();
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    const receiptNo = `NX-PAY-${year}-${rand}`; // Audit E3: Standardized Format
+    
     const { generatePaymentReceipt } = require('../services/pdfGenerator');
     const { sendPaymentConfirmationEmail } = require('../services/emailService');
     
+    // We update due and insert payment in a sequence
+    // Ideally this would be a single RPC for true atomicity
+    const { error: updateErr } = await supabase.from('dues_flags').update({ is_paid: true }).eq('id', dueId);
+    if (updateErr) throw new Error('Failed to update due status');
+
     let receiptPath = null;
     try {
       receiptPath = await generatePaymentReceipt(
@@ -102,7 +107,7 @@ router.post('/verify', requireAuth, async (req, res) => {
       console.error('Failed to generate receipt PDF inline:', e);
     }
     
-    const { data: payment } = await supabase
+    const { data: payment, error: payErr } = await supabase
       .from('payments')
       .insert([{
         user_id:        userId,
@@ -116,6 +121,12 @@ router.post('/verify', requireAuth, async (req, res) => {
       .select('*')
       .single();
 
+    if (payErr) {
+       // Rollback the due flag if payment insertion fails!
+       await supabase.from('dues_flags').update({ is_paid: false }).eq('id', dueId);
+       throw new Error('Payment record creation failed. Dues state rolled back.');
+    }
+
     // 5. Notify student
     const { data: apps } = await supabase.from('applications').select('id, users(email)').eq('user_id', userId).limit(1);
     const userEmail = apps?.[0]?.users?.email || req.user.email;
@@ -123,12 +134,10 @@ router.post('/verify', requireAuth, async (req, res) => {
     if (apps?.[0]) {
       await supabase.from('notifications').insert([{
         to_role:        'student',
+        user_id:        userId,
         application_id: apps[0].id,
-        message: JSON.stringify({
-          type:        'payment',
-          title:       'Payment Successful',
-          description: `₹${due.amount} paid to ${due.department}. Receipt: ${receiptNo}`,
-        }),
+        title:          'Payment Successful',
+        message:        `₹${due.amount} paid to ${due.department}. Receipt: ${receiptNo}`,
         is_read: false,
       }]);
     }

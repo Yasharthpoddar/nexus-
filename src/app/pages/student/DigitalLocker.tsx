@@ -11,6 +11,8 @@ import {
   HardDrive,
   Loader2
 } from 'lucide-react';
+import api from '../../api';
+import { safeDate, safeID } from '../../utils/formatters';
 
 interface CertRecord {
   id: string;
@@ -41,49 +43,32 @@ export function DigitalLocker() {
 
   // Fetch real locker data from backend
   useEffect(() => {
-    let pollingInterval: NodeJS.Timeout;
+    let interval: NodeJS.Timeout;
 
     const fetchLockerData = async () => {
       try {
-        const token = localStorage.getItem('nexus_token');
-        const headers = { Authorization: `Bearer ${token}` };
-        const base = import.meta.env.VITE_API_URL || '';
-
-        // API endpoints to fetch live files
         const [docsRes, paymentsRes, certRes] = await Promise.all([
-          fetch(`${base}/api/documents/mine`, { headers }), // Fixed from /applications/dashboard
-          fetch(`${base}/api/payment/mine`, { headers }),
-          fetch(`${base}/api/certificates/mine`, { headers }),
+          api.get('/api/documents/mine'), 
+          api.get('/api/payment/mine'),
+          api.get('/api/certificates/mine'),
         ]);
 
-        const [docsData, paymentsData, certData] = await Promise.all([
-          docsRes.ok ? docsRes.json() : { documents: [] },
-          paymentsRes.ok ? paymentsRes.json() : [],
-          certRes.ok ? certRes.json() : { certificates: [] },
-        ]);
+        const docsData     = docsRes.data;
+        const paymentsData = paymentsRes.data;
+        const certData     = certRes.data;
         
         let docs = docsData?.documents || [];
         docs = docs.filter((d: any) => d.status === 'Verified');
 
         const payments = Array.isArray(paymentsData) ? paymentsData : [];
-
-        let cert = certData?.certificates?.[0] || null;
+        const cert = certData?.certificates?.[0] || null;
 
         setLockerData({
-          documents: docs || [],
+          documents: docs,
           payments: Array.isArray(payments) ? payments : [],
           certificate: cert,
           totalFiles: (docs?.length || 0) + (Array.isArray(payments) ? payments.length : 0) + (cert ? 1 : 0),
         });
-
-        // Poll every 10 seconds if approved but certificate hasn't rendered yet
-        if (allCleared && !cert) {
-           if (!pollingInterval) {
-             pollingInterval = setInterval(fetchLockerData, 10000);
-           }
-        } else {
-           if (pollingInterval) clearInterval(pollingInterval);
-        }
 
       } catch (err) {
         console.error('Locker fetch error', err);
@@ -91,8 +76,12 @@ export function DigitalLocker() {
     };
     
     fetchLockerData();
-    return () => { if (pollingInterval) clearInterval(pollingInterval); };
-  }, [allCleared]);
+    interval = setInterval(fetchLockerData, 30000);
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, []);
 
   // Trigger real PDF download for single cert
   const handleDownloadCert = async () => {
@@ -106,15 +95,8 @@ export function DigitalLocker() {
 
       // If certificate row doesn't exist yet (legacy apps), force generation!
       if (!targetCertId) {
-        const genRes = await fetch(`${base}/api/certificates/generate-mine`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!genRes.ok) {
-          const err = await genRes.json().catch(() => ({ error: 'Auto-generation failed' }));
-          throw new Error(err.error || `HTTP ${genRes.status}`);
-        }
-        const genData = await genRes.json();
+        const genRes = await api.post('/api/certificates/generate-mine');
+        const genData = genRes.data;
         targetCertId = genData.certificateId;
 
         // Instantly reflect the downloaded certificate in the UI
@@ -127,16 +109,11 @@ export function DigitalLocker() {
 
       if (!targetCertId) throw new Error('Certificate generation failed.');
 
-      const response = await fetch(`${base}/api/certificates/download/${targetCertId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const response = await api.get(`/api/certificates/download/${targetCertId}`, {
+        responseType: 'blob'
       });
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: 'Download failed' }));
-        throw new Error(err.error || `HTTP ${response.status}`);
-      }
-
-      const blob = await response.blob();
+      const blob = response.data;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -156,13 +133,10 @@ export function DigitalLocker() {
     setDownloadingZip(true);
     setDownloadError(null);
     try {
-      const token = localStorage.getItem('nexus_token');
-      const base = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${base}/api/certificates/zip`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const response = await api.get('/api/certificates/zip', {
+        responseType: 'blob'
       });
-      if (!response.ok) throw new Error('Failed to generate ZIP');
-      const blob = await response.blob();
+      const blob = response.data;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -183,7 +157,7 @@ export function DigitalLocker() {
   const verifiedDocs = lockerData?.documents || [];
   const paymentsList = lockerData?.payments || [];
   
-  const displayCertId = cert?.certificate_id ?? `NX-CERT-${new Date().getFullYear()}-PENDING`;
+  const displayCertId = cert?.certificate_id ? `NX-${safeID(cert.certificate_id)}` : `NX-CERT-${new Date().getFullYear()}-PENDING`;
 
   const usedMB = lockerData
     ? ((lockerData.documents.length * 0.8) + (lockerData.payments.length * 0.3) + (lockerData.certificate ? 1.2 : 0)).toFixed(1)
@@ -287,7 +261,7 @@ export function DigitalLocker() {
                    }`}
                  >
                    {downloadingCert
-                     ? <><Loader2 className="w-4 h-4 animate-spin" /> {cert ? 'Downloading…' : 'Generating…'}</>
+                     ? <><Loader2 className="w-4 h-4 animate-spin" /> {cert ? 'Downloading...' : 'Generating...'}</>
                      : <><Download className="w-4 h-4" /> {cert ? 'Download PDF' : 'Generate PDF'}</>
                    }
                  </button>
@@ -332,11 +306,10 @@ export function DigitalLocker() {
              <button 
                 onClick={async () => {
                   try {
-                    const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/documents/preview/${doc.id}`, {
-                      headers: { Authorization: `Bearer ${localStorage.getItem('nexus_token')}` }
+                    const res = await api.get(`/api/documents/preview/${doc.id}`, {
+                      responseType: 'blob'
                     });
-                    if (!res.ok) throw new Error('Failed');
-                    const blob = await res.blob();
+                    const blob = res.data;
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
@@ -368,17 +341,16 @@ export function DigitalLocker() {
              </div>
              
              <h3 className="font-black uppercase tracking-tight line-clamp-1 mb-1">{payment.department} Receipt</h3>
-             <p className="font-bold text-xs uppercase tracking-widest opacity-60 mb-4">Paid ₹{payment.amount} • {dateStr}</p>
+             <p className="font-bold text-xs uppercase tracking-widest opacity-60 mb-4">Paid Rs.{payment.amount} - {dateStr}</p>
              
              <button 
                 onClick={async () => {
                   try {
                     const rno = payment.receipt_no || payment.receiptNo;
-                    const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/payment/receipt/${rno}`, {
-                      headers: { Authorization: `Bearer ${localStorage.getItem('nexus_token')}` }
+                    const res = await api.get(`/api/payment/receipt/${rno}`, {
+                      responseType: 'blob'
                     });
-                    if (!res.ok) throw new Error('Failed');
-                    const blob = await res.blob();
+                    const blob = res.data;
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;

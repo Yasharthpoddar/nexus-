@@ -29,7 +29,7 @@ export function CsvUpload() {
   const [dragActive, setDragActive]   = useState(false);
   const [processing, setProcessing]   = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadResult, setUploadResult] = useState<{ inserted: number; errors: number; flagged: number } | null>(null);
+  const [uploadResult, setUploadResult] = useState<{ inserted: number; errors: number; flagged: number; errorDetails?: string[] } | null>(null);
 
   const [flagged, setFlagged] = useState<DueRecord[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -81,22 +81,53 @@ export function CsvUpload() {
     if (e.dataTransfer.files?.[0]) handleFileSelect(e.dataTransfer.files[0]);
   };
 
+  // ── CSV Parsing Helper ──────────────────────────────────────────────────────
+  const parseCSV = (text: string): any[] => {
+    const lines = text.split('\n');
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const results: any[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = lines[i].split(',').map(c => c.trim());
+      const row: any = {};
+      
+      // Map common column names to our expected keys
+      // Expected: Roll No, Amount, Reason
+      headers.forEach((h, idx) => {
+        if (h.includes('roll')) row.rollNo = cols[idx];
+        else if (h.includes('amount')) row.amount = cols[idx];
+        else if (h.includes('reason')) row.reason = cols[idx];
+      });
+      
+      if (row.rollNo && row.amount) results.push(row);
+    }
+    return results;
+  };
+
   // ── Upload button ────────────────────────────────────────────────────────────
   const handleProcess = async () => {
     if (!file) { setUploadError('Please select a CSV file first'); return; }
     setProcessing(true);
     setUploadError(null);
     setUploadResult(null);
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('department', dept);
+      const text = await file.text();
+      const csvData = parseCSV(text);
+
+      if (csvData.length === 0) {
+        throw new Error('CSV is empty or malformed. Ensure columns: Roll No, Amount, Reason.');
+      }
 
       const token = localStorage.getItem('nexus_token');
-      const res   = await fetch(`${API_BASE}/api/dues/upload-csv`, {
+      const res   = await fetch(`${API_BASE}/api/admin/upload-csv`, {
         method:  'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body:    formData,
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ department: dept, csvData }),
       });
 
       if (!res.ok) {
@@ -105,9 +136,19 @@ export function CsvUpload() {
       }
 
       const result = await res.json();
-      setUploadResult({ inserted: result.inserted, errors: result.errors, flagged: result.flagged });
+      setUploadResult({ 
+        inserted: result.results.processed, 
+        errors: result.results.skipped, 
+        flagged: result.results.skipped, // Using skipped as flagged for visual
+        errorDetails: result.results.errors 
+      });
       setFile(null);
-      addCsvUpload({ filename: file.name, department: dept, rows: result.inserted + result.errors, flagged: result.flagged });
+      addCsvUpload({ 
+        filename: file.name, 
+        department: dept, 
+        rows: result.results.processed + result.results.skipped, 
+        flagged: result.results.skipped 
+      });
       fetchFlaggedStudents();
     } catch (err: any) {
       setUploadError(err.message || 'Upload failed. Please try again.');
@@ -201,11 +242,24 @@ export function CsvUpload() {
               </div>
             )}
 
-            {/* Success strip */}
+            {/* Success strip with errors */}
             {uploadResult && (
-              <div className="border-2 border-[#121212] bg-[#F0C020]/20 p-3 font-black text-xs uppercase tracking-widest text-[#121212] flex gap-6">
-                <span>✓ {uploadResult.inserted} students flagged</span>
-                {uploadResult.errors > 0 && <span className="text-[#D02020]">✗ {uploadResult.errors} rows skipped</span>}
+              <div className="flex flex-col gap-2">
+                <div className="border-2 border-[#121212] bg-[#F0C020]/20 p-3 font-black text-xs uppercase tracking-widest text-[#121212] flex gap-6">
+                  <span>✓ {uploadResult.inserted} students flagged</span>
+                  {uploadResult.errors > 0 && <span className="text-[#D02020]">✗ {uploadResult.errors} rows skipped</span>}
+                </div>
+                
+                {uploadResult.errorDetails && uploadResult.errorDetails.length > 0 && (
+                  <div className="border-2 border-[#D02020] bg-white p-4 max-h-[200px] overflow-y-auto">
+                    <p className="font-black text-[10px] uppercase tracking-widest text-[#D02020] mb-2">Detailed Skip Reasons:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      {uploadResult.errorDetails.map((err, idx) => (
+                        <li key={idx} className="text-[10px] font-bold text-[#121212]/70 uppercase">{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
             

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api';
 import { useAuth } from './AuthContext';
 
 export type ApplicationStatus = 'Pending' | 'Cleared' | 'Action Required' | 'Approved' | 'Flagged';
@@ -62,30 +62,31 @@ export function AuthorityProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<AuthNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const getRoute = () => {
+    const role = currentUser?.sub_role?.toLowerCase() || currentUser?.role?.toLowerCase();
+    if (role === 'principal') return '/api/principal';
+    if (role === 'librarian') return '/api/library';
+    if (role === 'lab-incharge') return '/api/lab';
+    return '/api/hod'; // Default to HOD
+  };
+
   const fetchSyncData = async () => {
-    // Accept both: admin users with sub_role=hod, AND users with role=hod
     if (!currentUser) {
       setLoading(false);
       return;
     }
-    const isHodUser = currentUser.sub_role === 'hod' || currentUser.role === 'hod';
-    if (!isHodUser) {
-      setLoading(false);
-      return;
-    }
+
+    const route = getRoute();
 
     try {
-      const token = localStorage.getItem('nexus_token');
-      const { data } = await axios.get('/api/hod/sync', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { data } = await api.get(`${route}/sync`);
       
       const resData = data.data;
 
       setProfile({
         name: currentUser.name,
-        role: 'HOD',
-        department: 'Computer Science'
+        role: currentUser.sub_role || 'Authority',
+        department: currentUser.department || 'Academic'
       });
 
       // Map Cleared/Action Required to Approved/Flagged for UI visual parity
@@ -130,54 +131,48 @@ export function AuthorityProvider({ children }: { children: React.ReactNode }) {
   };
 
   const approveApplication = async (id: string, comment?: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/hod/approve', { appId: id, comment }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post(`${getRoute()}/approve`, { appId: id, comment });
     fetchSyncData();
   };
 
   const flagApplication = async (id: string, comment: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/hod/flag', { appId: id, comment }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post(`${getRoute()}/flag`, { appId: id, comment });
     fetchSyncData();
   };
 
   // Batch: fan out to individual calls (same as Principal — avoids needing a separate batch endpoint)
   const batchAction = async (ids: string[], action: 'Approve' | 'Flag') => {
-    const token = localStorage.getItem('nexus_token');
-    const hdrs = { Authorization: `Bearer ${token}` };
+    const route = getRoute();
     await Promise.all(ids.map(id =>
       action === 'Approve'
-        ? axios.post('/api/hod/approve', { appId: id, comment: 'Batch approved by HOD' }, { headers: hdrs })
-        : axios.post('/api/hod/flag',    { appId: id, comment: 'Batch flagged by HOD'   }, { headers: hdrs })
+        ? api.post(`${route}/approve`, { appId: id, comment: 'Batch approved' })
+        : api.post(`${route}/flag`,    { appId: id, comment: 'Batch flagged'   })
     ));
     fetchSyncData();
   };
 
   const undoDecision = async (id: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/hod/undo', { appId: id }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post(`${getRoute()}/undo`, { appId: id });
     fetchSyncData();
   };
 
   const markNotificationRead = async (id: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/hod/notifications/read', { notifId: id }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post(`${getRoute()}/notifications/read`, { notifId: id });
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   };
 
   const markAllRead = async () => {
-    const token = localStorage.getItem('nexus_token');
+    const route = getRoute();
     // Mark all unread notifications read via individual calls (no bulk endpoint needed)
     const unread = notifications.filter(n => !n.read);
     await Promise.all(unread.map(n =>
-      axios.post('/api/hod/notifications/read', { notifId: n.id }, { headers: { Authorization: `Bearer ${token}` }})
+      api.post(`${route}/notifications/read`, { notifId: n.id })
     ));
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
   const toggleDocumentVerification = async (appId: string, docId: string) => {
-    const token = localStorage.getItem('nexus_token');
-    await axios.post('/api/hod/document/verify', { docId }, { headers: { Authorization: `Bearer ${token}` }});
+    await api.post(`${getRoute()}/document/verify`, { docId });
     fetchSyncData();
   };
 

@@ -34,9 +34,9 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB max
+  limits: { fileSize: 5 * 1024 * 1024 }, // Audit D1: 5 MB max
   fileFilter: (req, file, cb) => {
-    const allowed = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'];
+    const allowed = ['.pdf', '.jpg', '.jpeg', '.png']; // Audit D1: PDF, JPEG, PNG only
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) {
       cb(null, true);
@@ -50,8 +50,14 @@ const upload = multer({
 
 /** Only students (role='student') */
 function studentOnly(req, res, next) {
+  console.log('[DEBUG] studentOnly Check:', { user: req.user });
   if (req.user.role !== 'student') {
-    return res.status(403).json({ message: 'Access denied. Student role required.' });
+    console.warn('[DEBUG] studentOnly DENIED:', { role: req.user.role });
+    return res.status(403).json({ 
+      error: 'Access denied. Student role required.',
+      debug_found_role: req.user.role,
+      debug_user_id: req.user.id
+    });
   }
   next();
 }
@@ -59,34 +65,30 @@ function studentOnly(req, res, next) {
 /** Only authorities (role != 'student') — lab-incharge, hod, principal, admin */
 function authorityOnly(req, res, next) {
   if (req.user.role === 'student') {
-    return res.status(403).json({ message: 'Access denied. Authority role required.' });
+    return res.status(403).json({ error: 'Access denied. Authority role required.' });
   }
   next();
 }
 
-// All routes require authentication
-router.use(requireAuth);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-//  SHARED ROUTES (any authenticated user)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// GET /api/documents/types — list all document types
+// GET /api/documents/types — list all document types (Public for troubleshooting)
 router.get('/types', dc.getDocumentTypes);
+
+// All routes after this require authentication
+router.use(requireAuth);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  STUDENT ROUTES
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // POST /api/documents/upload — upload a new document
-// Multer field name: 'file'
-router.post('/upload', studentOnly, upload.single('file'), dc.uploadDocument);
+// Multer field name: 'document' (Audit D1)
+router.post('/upload', studentOnly, upload.single('document'), dc.uploadDocument);
 
 // GET /api/documents/mine — get all my documents with full history
 router.get('/mine', studentOnly, dc.getMyDocuments);
 
 // POST /api/documents/:id/resubmit — resubmit a rejected document
-router.post('/:id/resubmit', studentOnly, upload.single('file'), dc.resubmitDocument);
+router.post('/:id/resubmit', studentOnly, upload.single('document'), dc.resubmitDocument);
 
 // GET /api/documents/:id/certificate — download document certificate PDF
 router.get('/:id/certificate', studentOnly, dc.getDocumentCertificate);
