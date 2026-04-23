@@ -352,7 +352,7 @@ const getDocumentHistory = async (req, res) => {
     // Fetch the document with its type and the student info
     const { data: docData, error: docErr } = await supabase
       .from('documents')
-      .select('*, document_types!documents_doc_type_code_fkey(*), applications!inner(id, user_id, users!inner(id, name, roll_number, branch, batch, email))')
+      .select('*, document_types(*), applications!inner(id, user_id, users!inner(id, name, roll_number, branch, batch, email))')
       .eq('id', documentId);
 
     if (docErr) throw docErr;
